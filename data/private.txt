@@ -1,0 +1,3 @@
+abc123...321xyz##http://log:pass@ip:port
+abc123...321xyz##socks5://log:pass@ip:port
+abc123...321xyz##http://log:pass@ip:port

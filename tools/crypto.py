@@ -1,0 +1,1080 @@
+import secrets
+import time
+
+from eth_account import Account
+from eth_account.messages import encode_defunct
+from eth_utils import to_bytes
+from loguru import logger
+from web3 import Web3
+from web3.exceptions import TimeExhausted
+
+from datatypes.account import AccountItem
+from datatypes.crypto import Balance, Token
+from settings.chains import ChainItem, taiko_chain
+from settings.constants import orbiter_contract, taiko_weth_contract, conft_contract, conft_mint_price, \
+    omnihub_contract, rubyscore_contract, rhino_gm_price, hana_supply_contract, gas_multiplier, ritsu_swap_contract, \
+    ritsu_swap_abi, xy_contracts, eth_contract, xy_aggregator_contract, ritsu_pools, hana_token_repay_borrow_contract, \
+    taiko_usdc_contract, taiko_taiko_contract, hana_eth_repay_borrow_contract, brigade_nft_contract, \
+    crack_x_stack_contract, zypher2048_contract, week_badge_contract, meridian_deposit_contract, kiloex_deposit_contract
+from tools.coingecko import get_asset_price
+
+
+def pad_to_32_bytes(value):
+    return value.rjust(64, '0')
+
+
+def generate_private_key() -> str:
+    return secrets.token_hex(32)
+
+
+def encode_data(method_hash, params):
+    encoded_params = ''
+    for param in params:
+        if isinstance(param, int):
+            encoded_params += pad_to_32_bytes(hex(param)[2:])
+        elif isinstance(param, str) and param.startswith('0x'):
+            encoded_params += pad_to_32_bytes(param[2:])
+        else:
+            raise ValueError("Unsupported parameter type")
+    return method_hash + encoded_params
+
+
+def get_balance(address: str, rpc: str):
+    web3 = Web3(Web3.HTTPProvider(rpc))
+    balance = web3.eth.get_balance(web3.to_checksum_address(address))
+    return Balance(
+        int=balance,
+        float=round(web3.from_wei(balance, 'ether'), 6)
+    )
+
+
+def get_balance_of(contract: str, address: str, denomination: int = 10 ** 18):
+    web3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    abi = '''
+    [
+        {
+            "constant":true,
+            "inputs":[{"name":"_owner","type":"address"}],
+            "name":"balanceOf",
+            "outputs":[{"name":"balance","type":"uint256"}],
+            "type":"function"
+        }
+    ]
+    '''
+
+    token_contract = web3.eth.contract(address=web3.to_checksum_address(contract), abi=abi)
+    balance = token_contract.functions.balanceOf(web3.to_checksum_address(address)).call()
+
+    return Balance(
+        int=balance,
+        float=round(balance / denomination, 8)
+    )
+
+
+def wait_for_new_balance(old_balance: Balance, account: AccountItem, chain: ChainItem) -> Balance:
+    tries = 0
+    while True:
+        new_recipient_balance = get_balance(address=account.address, rpc=chain.rpc)
+        if new_recipient_balance.float != old_balance.float:
+            return new_recipient_balance
+        else:
+            tries += 1
+            if tries > 600:
+                return new_recipient_balance
+            time.sleep(1)
+
+
+def sign_and_wait(w3: Web3, transaction: {}, private_key: str, timeout: int = 120):
+    account = w3.eth.account.from_key(private_key)
+    signed_txn = w3.eth.account.sign_transaction(transaction, private_key)
+    try:
+        txn_hash = w3.eth.send_raw_transaction(signed_txn.rawTransaction)
+        receipt = w3.eth.wait_for_transaction_receipt(txn_hash, timeout=timeout)
+
+        if receipt.status == 1:
+            return txn_hash.hex()
+        else:
+            return None
+    except TimeExhausted:
+        logger.error(f"{account.address}: {txn_hash.hex()} not confirmed in {timeout} seconds.")
+        return None
+    except ValueError as e:
+        error_message = e.args[0]
+        if 'replacement transaction underpriced' in error_message.get('message', ''):
+            logger.error(f"{account.address}: replacement transaction underpriced.")
+            return None
+
+
+def get_gas(w3: Web3()):
+    latest_block = w3.eth.block_number
+    fee_history = w3.eth.fee_history(1, latest_block, reward_percentiles=[50])
+    base_fee_per_gas = fee_history['baseFeePerGas'][0]
+    max_priority_fee_per_gas = int(fee_history['reward'][0][0] * gas_multiplier)
+
+    max_fee_per_gas = int(base_fee_per_gas + max_priority_fee_per_gas * gas_multiplier)
+    return max_priority_fee_per_gas, max_fee_per_gas
+
+
+def orbiter_bridge_tx(
+        private_key: str,
+        source_chain: ChainItem,
+        recipient_chain: ChainItem,
+        amount_to_bridge: float
+):
+    w3 = Web3(Web3.HTTPProvider(source_chain.rpc))
+    orbiter_recipient = w3.to_checksum_address(orbiter_contract)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    gas_limit = int(w3.eth.estimate_gas({
+        'from': account.address,
+        'to': orbiter_recipient,
+        'value': Web3.to_wei(amount_to_bridge, 'ether') + recipient_chain.orbiter_code,
+        'data': '0x'
+    }) * gas_multiplier)
+
+    transaction = {
+        "chainId": source_chain.id,
+        "from": account.address,
+        "to": orbiter_recipient,
+        "value": Web3.to_wei(amount_to_bridge, 'ether') + recipient_chain.orbiter_code,
+        "data": "0x",
+        "gas": gas_limit,
+        "maxFeePerGas": max_fee_per_gas,
+        "maxPriorityFeePerGas": max_priority_fee_per_gas,
+        "nonce": nonce
+    }
+
+    return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+
+
+def xy_bridge_tx(
+        private_key: str,
+        source_chain: ChainItem,
+        recipient_chain: ChainItem,
+        amount_to_bridge: float
+):
+    w3 = Web3(Web3.HTTPProvider(source_chain.rpc))
+    recipient = w3.to_checksum_address(xy_contracts[source_chain.name])
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    method = '0xcdc65927'
+    data = method + \
+           pad_to_32_bytes('0').lower() + \
+           pad_to_32_bytes(eth_contract[2:]).lower() + \
+           pad_to_32_bytes(eth_contract[2:]).lower() + \
+           pad_to_32_bytes(account.address[2:]).lower() + \
+           pad_to_32_bytes(hex(int(amount_to_bridge * 10 ** 18))[2:]).lower() + \
+           pad_to_32_bytes(hex(int(amount_to_bridge * 10 ** 18))[2:]).lower() + \
+           pad_to_32_bytes('1a0').lower() + \
+           pad_to_32_bytes(hex(recipient_chain.id)[2:]).lower() + \
+           pad_to_32_bytes(eth_contract[2:]).lower() + \
+           pad_to_32_bytes('0').lower() + \
+           pad_to_32_bytes(hex(int(amount_to_bridge * 0.9 * 10 ** 18))[2:]).lower() + \
+           pad_to_32_bytes('64').lower() + \
+           pad_to_32_bytes(xy_aggregator_contract[2:]).lower() + \
+           pad_to_32_bytes('1').lower() + \
+           pad_to_32_bytes('0').lower()
+
+    gas_limit = int(w3.eth.estimate_gas({
+        'from': account.address,
+        'to': recipient,
+        'value': Web3.to_wei(amount_to_bridge, 'ether'),
+        'data': data
+    }) * gas_multiplier)
+
+    transaction = {
+        "chainId": source_chain.id,
+        "from": account.address,
+        "to": recipient,
+        "value": Web3.to_wei(amount_to_bridge, 'ether'),
+        "data": data,
+        "gas": gas_limit,
+        "maxFeePerGas": max_fee_per_gas,
+        "maxPriorityFeePerGas": max_priority_fee_per_gas,
+        "nonce": nonce
+    }
+
+    return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+
+
+def wrap_tx(private_key: str, amount_to_wrap: float):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    weth_contract = w3.to_checksum_address(taiko_weth_contract)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    gas_limit = int(w3.eth.estimate_gas({
+        'from': account.address,
+        'to': weth_contract,
+        'value': Web3.to_wei(amount_to_wrap, 'ether'),
+        'data': '0xd0e30db0'
+    }) * gas_multiplier)
+
+    transaction = {
+        "chainId": taiko_chain.id,
+        "from": account.address,
+        "to": weth_contract,
+        "value": Web3.to_wei(amount_to_wrap, 'ether'),
+        "data": "0xd0e30db0",
+        "gas": gas_limit,
+        "maxFeePerGas": max_fee_per_gas,
+        "maxPriorityFeePerGas": max_priority_fee_per_gas,
+        "nonce": nonce
+    }
+
+    return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+
+
+def unwrap_tx(private_key: str, amount_to_unwrap: Balance):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    weth_contract = w3.to_checksum_address(taiko_weth_contract)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    method_hash = '0x2e1a7d4d'
+    amount_hex = hex(amount_to_unwrap.int)[2:].zfill(64)
+    data = method_hash + amount_hex
+
+    gas_limit = int(w3.eth.estimate_gas({
+        'from': account.address,
+        'to': weth_contract,
+        'value': 0,
+        'data': data
+    }) * gas_multiplier)
+
+    transaction = {
+        "chainId": taiko_chain.id,
+        "from": account.address,
+        "to": weth_contract,
+        "value": 0,
+        "data": data,
+        "gas": gas_limit,
+        "maxFeePerGas": max_fee_per_gas,
+        "maxPriorityFeePerGas": max_priority_fee_per_gas,
+        "nonce": nonce
+    }
+
+    return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+
+
+def conft_tx(private_key: str):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    conft_recipient = w3.to_checksum_address(conft_contract)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    gas_limit = int(w3.eth.estimate_gas({
+        'from': account.address,
+        'to': conft_recipient,
+        'value': int(conft_mint_price * 10 ** 18),
+        'data': '0x1249c58b'
+    }) * gas_multiplier)
+
+    transaction = {
+        "chainId": taiko_chain.id,
+        "from": account.address,
+        "to": conft_recipient,
+        "value": int(conft_mint_price * 10 ** 18),
+        "data": '0x1249c58b',
+        "gas": gas_limit,
+        "maxFeePerGas": max_fee_per_gas,
+        "maxPriorityFeePerGas": max_priority_fee_per_gas,
+        "nonce": nonce
+    }
+
+    return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+
+
+def omnihub_tx(private_key: str):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    omnihub_recipient = w3.to_checksum_address(omnihub_contract)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    gas_limit = int(w3.eth.estimate_gas({
+        'from': account.address,
+        'to': omnihub_recipient,
+        'value': "0x5f7f37b39000",
+        'data': '0xa0712d680000000000000000000000000000000000000000000000000000000000000001'
+    }) * gas_multiplier)
+
+    transaction = {
+        "chainId": taiko_chain.id,
+        "from": account.address,
+        "to": omnihub_recipient,
+        "value": "0x5f7f37b39000",
+        "data": '0xa0712d680000000000000000000000000000000000000000000000000000000000000001',
+        "gas": gas_limit,
+        "maxFeePerGas": max_fee_per_gas,
+        "maxPriorityFeePerGas": max_priority_fee_per_gas,
+        "nonce": nonce
+    }
+
+    return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+
+
+def rubyscore_vote_tx(private_key: str):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    recipient = w3.to_checksum_address(rubyscore_contract)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    gas_limit = int(w3.eth.estimate_gas({
+        'from': account.address,
+        'to': recipient,
+        'value': 0,
+        'data': '0x632a9a52'
+    }) * gas_multiplier)
+
+    transaction = {
+        "chainId": taiko_chain.id,
+        "from": account.address,
+        "to": recipient,
+        "value": 0,
+        "data": '0x632a9a52',
+        "gas": gas_limit,
+        "maxFeePerGas": max_fee_per_gas,
+        "maxPriorityFeePerGas": max_priority_fee_per_gas,
+        "nonce": nonce
+    }
+
+    return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+
+
+def transfer_tx(private_key: str, amount_to_send: float, chain: ChainItem = taiko_chain, address: str = ''):
+    w3 = Web3(Web3.HTTPProvider(chain.rpc))
+    account = w3.eth.account.from_key(private_key)
+
+    if address:
+        recipient = w3.to_checksum_address(address)
+    else:
+        recipient = account.address
+
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    gas_limit = int(w3.eth.estimate_gas({
+        'from': account.address,
+        'to': recipient,
+        'value': int(amount_to_send * 10 ** 18)
+    }) * gas_multiplier)
+
+    transaction = {
+        "chainId": chain.id,
+        "from": account.address,
+        "to": recipient,
+        "value": int(amount_to_send * 10 ** 18),
+        "gas": gas_limit,
+        "maxFeePerGas": max_fee_per_gas,
+        "maxPriorityFeePerGas": max_priority_fee_per_gas,
+        "nonce": nonce
+    }
+
+    return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+
+
+def rhino_tx(private_key: str, contract: str):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    recipient = w3.to_checksum_address(contract)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    gas_limit = int(w3.eth.estimate_gas({
+        'from': account.address,
+        'to': recipient,
+        'value': int(rhino_gm_price * 10 ** 18),
+        'data': '0xc0129d43'
+    }) * gas_multiplier)
+
+    transaction = {
+        "chainId": taiko_chain.id,
+        "from": account.address,
+        "to": recipient,
+        "value": int(rhino_gm_price * 10 ** 18),
+        "data": '0xc0129d43',
+        "gas": gas_limit,
+        "maxFeePerGas": max_fee_per_gas,
+        "maxPriorityFeePerGas": max_priority_fee_per_gas,
+        "nonce": nonce
+    }
+
+    return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+
+
+def pad_hex(value, length=64):
+    return value[2:].zfill(length)
+
+
+def hana_supply_tx(private_key: str, supply_amount: float):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    recipient = w3.to_checksum_address(hana_supply_contract)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    from_address = '0xa51894664a773981c6c112c43ce576f315d5b1b6'
+    to_address = account.address
+    amount = 0
+
+    from_address_padded = pad_hex(Web3.to_checksum_address(from_address)).lower()
+    to_address_padded = pad_hex(Web3.to_checksum_address(to_address)).lower()
+    amount_padded = pad_hex(hex(amount))
+
+    data = '0x474cf53d' + from_address_padded + to_address_padded + amount_padded
+
+    gas_limit = int(w3.eth.estimate_gas({
+        'from': account.address,
+        'to': recipient,
+        'value': int(supply_amount * 10 ** 18),
+        'data': data
+    }) * gas_multiplier)
+
+    transaction = {
+        "chainId": taiko_chain.id,
+        "from": account.address,
+        "to": recipient,
+        "value": int(supply_amount * 10 ** 18),
+        "data": data,
+        "gas": gas_limit,
+        "maxFeePerGas": max_fee_per_gas,
+        "maxPriorityFeePerGas": max_priority_fee_per_gas,
+        "nonce": nonce
+    }
+
+    return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+
+
+def hana_withdraw_tx(private_key: str, withdraw_amount: int):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    recipient = w3.to_checksum_address(hana_supply_contract)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    from_address = '0xa51894664a773981c6c112c43ce576f315d5b1b6'
+    value_hex = hex(withdraw_amount)[2:].zfill(64)
+
+    from_address_padded = pad_hex(Web3.to_checksum_address(from_address)).lower()
+    value_padded = pad_hex(value_hex).lower()
+    to_address_padded = pad_hex(Web3.to_checksum_address(account.address)).lower()
+
+    data = '0x80500d20' + from_address_padded + value_padded + to_address_padded
+
+    try:
+        gas_limit = int(w3.eth.estimate_gas({
+            'from': account.address,
+            'to': recipient,
+            'value': 0,
+            'data': data
+        }) * gas_multiplier)
+
+        transaction = {
+            "chainId": taiko_chain.id,
+            "from": account.address,
+            "to": recipient,
+            "value": 0,
+            "data": data,
+            "gas": gas_limit,
+            "maxFeePerGas": max_fee_per_gas,
+            "maxPriorityFeePerGas": max_priority_fee_per_gas,
+            "nonce": nonce
+        }
+
+        return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+    except Exception as e:
+        if '35' in e.args[0]:
+            logger.error(
+                f'{account.address}: '
+                f'{e.args[0]} while withdrawing {round(withdraw_amount / 10 ** 18, 6)} $ETH, trying less amount.'
+            )
+            return hana_withdraw_tx(private_key=private_key, withdraw_amount=int(withdraw_amount * 0.999))
+        else:
+            logger.exception(e)
+
+
+def hana_approve_tx(token: Token, approve_amount: int, private_key: str):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    recipient = w3.to_checksum_address(token.address)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    data = '0x095ea7b3' + \
+           pad_to_32_bytes(hana_token_repay_borrow_contract[2:]) + \
+           pad_to_32_bytes(hex(approve_amount)[2:])
+
+    data = data.lower()
+
+    gas_limit = int(w3.eth.estimate_gas({
+        'from': account.address,
+        'to': recipient,
+        'value': 0,
+        'data': data
+    }) * gas_multiplier)
+
+    transaction = {
+        "chainId": taiko_chain.id,
+        "from": account.address,
+        "to": recipient,
+        "value": 0,
+        "data": data,
+        "gas": gas_limit,
+        "maxFeePerGas": max_fee_per_gas,
+        "maxPriorityFeePerGas": max_priority_fee_per_gas,
+        "nonce": nonce
+    }
+
+    return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+
+
+def meridian_approve_tx(token: Token, approve_amount: int, private_key: str):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    recipient = w3.to_checksum_address(token.address)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    data = '0x095ea7b3' + \
+           pad_to_32_bytes(meridian_deposit_contract[2:]) + \
+           pad_to_32_bytes(hex(approve_amount)[2:])
+
+    data = data.lower()
+
+    gas_limit = int(w3.eth.estimate_gas({
+        'from': account.address,
+        'to': recipient,
+        'value': 0,
+        'data': data
+    }) * gas_multiplier)
+
+    transaction = {
+        "chainId": taiko_chain.id,
+        "from": account.address,
+        "to": recipient,
+        "value": 0,
+        "data": data,
+        "gas": gas_limit,
+        "maxFeePerGas": max_fee_per_gas,
+        "maxPriorityFeePerGas": max_priority_fee_per_gas,
+        "nonce": nonce
+    }
+
+    return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+
+
+def kiloex_approve_tx(token: Token, approve_amount: int, private_key: str):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    recipient = w3.to_checksum_address(token.address)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    data = '0x095ea7b3' + \
+           pad_to_32_bytes(kiloex_deposit_contract[2:]) + \
+           pad_to_32_bytes(hex(approve_amount)[2:])
+
+    data = data.lower()
+
+    gas_limit = int(w3.eth.estimate_gas({
+        'from': account.address,
+        'to': recipient,
+        'value': 0,
+        'data': data
+    }) * gas_multiplier)
+
+    transaction = {
+        "chainId": taiko_chain.id,
+        "from": account.address,
+        "to": recipient,
+        "value": 0,
+        "data": data,
+        "gas": gas_limit,
+        "maxFeePerGas": max_fee_per_gas,
+        "maxPriorityFeePerGas": max_priority_fee_per_gas,
+        "nonce": nonce
+    }
+
+    return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+
+
+def hana_repay_tx(private_key: str, repay_amount: int, repay_token: Token):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    recipient = w3.to_checksum_address(
+        hana_token_repay_borrow_contract if repay_token.ticker != 'ETH' else hana_eth_repay_borrow_contract
+    )
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    data = '0x02c5fcf8' if repay_token.ticker == 'ETH' else '0x573ade81'
+
+    if repay_token.ticker == 'USDC':
+        data += pad_to_32_bytes(taiko_usdc_contract[2:])
+    elif repay_token.ticker == 'ETH':
+        data += pad_to_32_bytes(taiko_weth_contract[2:])
+    elif repay_token.ticker == 'TKO':
+        data += pad_to_32_bytes(taiko_taiko_contract[2:])
+
+    data += pad_to_32_bytes(hex(repay_amount)[2:]) + pad_to_32_bytes('2') + pad_to_32_bytes(account.address[2:])
+    data = data.lower()
+
+    value = repay_amount if repay_token.ticker == 'ETH' else 0
+    gas_limit = int(w3.eth.estimate_gas({
+        'from': account.address,
+        'to': recipient,
+        'value': value,
+        'data': data
+    }) * gas_multiplier)
+
+    transaction = {
+        "chainId": taiko_chain.id,
+        "from": account.address,
+        "to": recipient,
+        "value": value,
+        "data": data,
+        "gas": gas_limit,
+        "maxFeePerGas": max_fee_per_gas,
+        "maxPriorityFeePerGas": max_priority_fee_per_gas,
+        "nonce": nonce
+    }
+
+    return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+
+
+def hana_borrow_tx(private_key: str, borrow_amount: int, borrow_token: Token):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    recipient = w3.to_checksum_address(
+        hana_token_repay_borrow_contract if borrow_token.ticker != 'ETH' else hana_eth_repay_borrow_contract
+    )
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    data = '0x66514c97' if borrow_token.ticker == 'ETH' else '0xa415bcad'
+
+    if borrow_token.ticker == 'USDC':
+        data += pad_to_32_bytes(taiko_usdc_contract[2:])
+    elif borrow_token.ticker == 'ETH':
+        data += pad_to_32_bytes(taiko_weth_contract[2:])
+    elif borrow_token.ticker == 'TKO':
+        data += pad_to_32_bytes(taiko_taiko_contract[2:])
+
+    data += pad_to_32_bytes(hex(borrow_amount)[2:]) + pad_to_32_bytes('2') + pad_to_32_bytes('0')
+    if borrow_token.ticker != 'ETH':
+        data += pad_to_32_bytes(account.address[2:])
+
+    data = data.lower()
+
+    gas_limit = int(w3.eth.estimate_gas({
+        'from': account.address,
+        'to': recipient,
+        'value': 0,
+        'data': data
+    }) * gas_multiplier)
+
+    transaction = {
+        "chainId": taiko_chain.id,
+        "from": account.address,
+        "to": recipient,
+        "value": 0,
+        "data": data,
+        "gas": gas_limit,
+        "maxFeePerGas": max_fee_per_gas,
+        "maxPriorityFeePerGas": max_priority_fee_per_gas,
+        "nonce": nonce
+    }
+
+    return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+
+
+def convert_address(address):
+    return to_bytes(hexstr=pad_to_32_bytes(address[2:]))
+
+
+def convert_uint(value):
+    return to_bytes(hexstr=pad_to_32_bytes(hex(value)[2:]))
+
+
+def get_amount_out_min(token_in_price: float,
+                       amount_in: float,
+                       token_out_price: float):
+    amount_out = token_in_price * amount_in / token_out_price
+    return amount_out
+
+
+def get_steps(pair: str, address: str):
+    if pair == 'ETH-USDC':
+        return [generate_swap_step(
+            pool=ritsu_pools["USDC"],
+            token_from=taiko_weth_contract,
+            address=address
+        )]
+    elif pair == 'ETH-TKO':
+        return [
+            generate_swap_step(
+                pool=ritsu_pools["TKO"],
+                token_from=taiko_weth_contract,
+                address=address
+            ),
+        ]
+
+
+def generate_swap_step(
+        pool: str,
+        token_from: str,
+        address: str
+):
+    data = '0x' + pad_to_32_bytes(token_from[2:]).lower() + \
+           pad_to_32_bytes(address[2:]).lower() + \
+           pad_to_32_bytes('2').lower()
+
+    return {
+        'pool': pool,
+        'data': data,
+        'callback': "0x0000000000000000000000000000000000000000",
+        'callbackData': "0x"
+
+    }
+
+
+def ritsu_swap_tx(private_key: str, token_in: Token,
+                  token_out: Token, amount_in: int):
+    amount_out_min_float = get_amount_out_min(
+        token_in_price=get_asset_price(ticker=token_in.coingecko_ticker),
+        amount_in=round(amount_in / token_in.denomination, 10),
+        token_out_price=get_asset_price(ticker=token_out.coingecko_ticker)
+    )
+    amount_out_min = int(amount_out_min_float * token_out.denomination * 0.8)
+    if not amount_out_min:
+        amount_out_min = 1
+
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    ritsu_contract = w3.eth.contract(
+        address=w3.to_checksum_address(ritsu_swap_contract),
+        abi=ritsu_swap_abi
+    )
+
+    transaction = ritsu_contract.functions.swap(
+        [
+            {
+                'steps': get_steps(
+                    pair=f"{token_in.ticker}-{token_out.ticker}",
+                    address=account.address
+                ),
+                'tokenIn': token_in.address,
+                'amountIn': amount_in
+            }
+        ],
+        amount_out_min,
+        int(time.time() + 60)
+    ).build_transaction({
+        'value': amount_in,
+        'from': account.address,
+        'chainId': taiko_chain.id,
+        "maxFeePerGas": max_fee_per_gas,
+        "maxPriorityFeePerGas": max_priority_fee_per_gas,
+        "nonce": nonce
+    })
+
+    gas_limit = int(w3.eth.estimate_gas(transaction=transaction) * gas_multiplier)
+    transaction['gas'] = gas_limit
+
+    return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+
+
+def brigade_mint_tx(private_key: str):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    recipient = w3.to_checksum_address(brigade_nft_contract)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    try:
+        gas_limit = int(w3.eth.estimate_gas({
+            'from': account.address,
+            'to': recipient,
+            'data': '0x4641257d'
+        }) * gas_multiplier)
+
+        transaction = {
+            "chainId": taiko_chain.id,
+            "from": account.address,
+            "to": recipient,
+            "data": '0x4641257d',
+            "gas": gas_limit,
+            "maxFeePerGas": max_fee_per_gas,
+            "maxPriorityFeePerGas": max_priority_fee_per_gas,
+            "nonce": nonce
+        }
+
+        return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+    except Exception as e:
+        if "You can't harvest yet" in e.args[0]:
+            logger.error(
+                f'{account.address}: '
+                f'{e.args[0]}'
+            )
+        else:
+            logger.exception(e)
+
+
+def crack_x_stack_tx(private_key: str):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    recipient = w3.to_checksum_address(crack_x_stack_contract)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    try:
+        gas_limit = int(w3.eth.estimate_gas({
+            'from': account.address,
+            'to': recipient,
+            'data': '0x97e01a46'
+        }) * gas_multiplier)
+
+        transaction = {
+            "chainId": taiko_chain.id,
+            "from": account.address,
+            "to": recipient,
+            "data": '0x97e01a46',
+            "gas": gas_limit,
+            "maxFeePerGas": max_fee_per_gas,
+            "maxPriorityFeePerGas": max_priority_fee_per_gas,
+            "nonce": nonce
+        }
+
+        return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+    except Exception as e:
+        logger.exception(e)
+
+
+def generate_random_hash():
+    random_bytes = secrets.token_bytes(32)
+    random_hash = "0x" + random_bytes.hex()
+    return random_hash
+
+
+def zypher2048_tx(private_key: str):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    recipient = w3.to_checksum_address(zypher2048_contract)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    data = '0x36ab86c4' + pad_to_32_bytes(generate_random_hash()[2:]) + pad_to_32_bytes('1')
+
+    try:
+        gas_limit = int(w3.eth.estimate_gas({
+            'from': account.address,
+            'to': recipient,
+            'value': int(0.00025 * 10 ** 18),
+            'data': data
+        }) * gas_multiplier)
+
+        transaction = {
+            "chainId": taiko_chain.id,
+            "from": account.address,
+            "to": recipient,
+            "data": data,
+            'value': int(0.00025 * 10 ** 18),
+            "gas": gas_limit,
+            "maxFeePerGas": max_fee_per_gas,
+            "maxPriorityFeePerGas": max_priority_fee_per_gas,
+            "nonce": nonce
+        }
+
+        return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+    except Exception as e:
+        logger.exception(e)
+
+
+def get_badge_signature(private_key: str, timestamp: int):
+    account = Account.from_key(private_key)
+
+    message = str(timestamp)
+
+    encoded_data = encode_defunct(text=message)
+    signed_message = account.sign_message(encoded_data)
+    signature = signed_message.signature.hex()
+    return signature
+
+
+def week7_tx(private_key: str, message: str):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    recipient = w3.to_checksum_address(week_badge_contract)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    data = '0x00257612' + \
+           pad_to_32_bytes('40') + \
+           pad_to_32_bytes('6') + \
+           pad_to_32_bytes('41') + \
+           message + \
+           pad_to_32_bytes('0')
+
+    try:
+        gas_limit = int(w3.eth.estimate_gas({
+            'from': account.address,
+            'to': recipient,
+            'data': data
+        }) * gas_multiplier)
+
+        transaction = {
+            "chainId": taiko_chain.id,
+            "from": account.address,
+            "to": recipient,
+            "data": data,
+            "gas": gas_limit,
+            "maxFeePerGas": max_fee_per_gas,
+            "maxPriorityFeePerGas": max_priority_fee_per_gas,
+            "nonce": nonce
+        }
+
+        return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+    except Exception as e:
+        if '0x9ea134e9' in e.message:
+            return 'already minted'
+        logger.exception(e)
+
+
+def week8_tx(private_key: str, message: str):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    recipient = w3.to_checksum_address(week_badge_contract)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    data = '0x00257612' + \
+           pad_to_32_bytes('40') + \
+           pad_to_32_bytes('6') + \
+           pad_to_32_bytes('41') + \
+           message + \
+           pad_to_32_bytes('0')
+
+    try:
+        gas_limit = int(w3.eth.estimate_gas({
+            'from': account.address,
+            'to': recipient,
+            'data': data
+        }) * gas_multiplier)
+
+        transaction = {
+            "chainId": taiko_chain.id,
+            "from": account.address,
+            "to": recipient,
+            "data": data,
+            "gas": gas_limit,
+            "maxFeePerGas": max_fee_per_gas,
+            "maxPriorityFeePerGas": max_priority_fee_per_gas,
+            "nonce": nonce
+        }
+
+        return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+    except Exception as e:
+        if '0x9ea134e9' in e.message:
+            return 'already minted'
+        logger.exception(e)
+
+
+def meridian_deposit_tx(private_key: str, deposit_int: int):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    recipient = w3.to_checksum_address(meridian_deposit_contract)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+    data = '0xe8eda9df' + \
+           pad_to_32_bytes(taiko_usdc_contract[2:]) + \
+           pad_to_32_bytes(hex(deposit_int)[2:]) + \
+           pad_to_32_bytes(account.address[2:]) + \
+           pad_to_32_bytes('0')
+
+    # 0xe8eda9df
+    # 00000000000000000000000007d83526730c7438048d55a4fc0b850e2aab6f0b
+    # 000000000000000000000000000000000000000000000000000000000000492e
+    # 0000000000000000000000001f10312ce8ed0bef1fa16339a10c345283da6130
+    # 0000000000000000000000000000000000000000000000000000000000000000
+
+    # 0x36ab86c400000000000000000000000007d83526730c7438048d55a4fc0b850e2aab6f0b000000000000000000000000000000000000000000000000000000000000492e0000000000000000000000001F10312Ce8ED0BeF1fA16339a10C345283dA61300000000000000000000000000000000000000000000000000000000000000000
+
+    try:
+        gas_limit = int(w3.eth.estimate_gas({
+            'from': account.address,
+            'to': recipient,
+            'value': 0,
+            'data': data
+        }) * gas_multiplier)
+
+        transaction = {
+            "chainId": taiko_chain.id,
+            "from": account.address,
+            "to": recipient,
+            "data": data,
+            'value': 0,
+            "gas": gas_limit,
+            "maxFeePerGas": max_fee_per_gas,
+            "maxPriorityFeePerGas": max_priority_fee_per_gas,
+            "nonce": nonce
+        }
+
+        return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+    except Exception as e:
+        logger.exception(e)
