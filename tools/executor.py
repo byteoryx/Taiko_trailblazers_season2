@@ -27,7 +27,7 @@ from tools.sql import sql_get_accs, sql_get_accs_to_work, sql_get_accs_to_deposi
     sql_get_not_minted_badge
 from tools.task import bridge_withdraw, bridge_deposit, brigade_nft_task, self_transfer_task, rhino_task, \
     rubyscore_task, omnihub_task, conft_task, wrap_task, burner_transfer_task, crack_x_stack_task, zypher2048_task, \
-    unwrap_task, burner_withdraw_task, meridian_task, kiloex_task
+    unwrap_task, burner_withdraw_task, meridian_task, meridian_withdraw_task
 from tools.trailblazers import update_trailblazers_profile
 
 
@@ -69,6 +69,7 @@ def main_single_report_executor(acc: AccountItem, sql: SQL):
 
 
 def main_single_withdraw_executor(acc: AccountItem, sql: SQL, today_bridge: str):
+    execute_task(sql, acc, meridian_withdraw_task, (1, 1), today_bridge, 'meridian-withdraw')
     execute_task(sql, acc, unwrap_task, (1, 1), today_bridge, 'unwrap')
     execute_task(sql, acc, burner_withdraw_task, (1, 1), today_bridge, 'burner-withdraw')
     if withdraw_from_taiko_to_source_chains:
@@ -86,8 +87,7 @@ def main_week8_single_executor(acc: AccountItem, sql: SQL, today_bridge: str):
     if result:
         if 'not whitelisted' in result:
             tasks = [
-                {"task_func": meridian_task, "task_range": (0, 1), "log_suffix": 'meridian'},
-                {"task_func": kiloex_task, "task_range": (0, 1), "log_suffix": 'kiloex'},
+                {"task_func": meridian_task, "task_range": (1, 1), "log_suffix": 'meridian'}
             ]
 
             random.shuffle(tasks)
@@ -99,7 +99,10 @@ def main_week8_single_executor(acc: AccountItem, sql: SQL, today_bridge: str):
                         today_bridge, task["log_suffix"], True, True, False
                     )
 
+            sleep_in_range(sec_from=60 + sleep_between_txs_in_sec[0], sec_to=60 + sleep_between_txs_in_sec[1])
             week_main(index=acc.id, private_key=acc.private_key, sql=sql, day=today_bridge, badge_id=7)
+
+    execute_task(sql, acc, meridian_withdraw_task, (1, 1), today_bridge, 'meridian-withdraw')
     logger.info(f'#{acc.id} | {acc.address}: week8 finish.')
 
 
@@ -122,6 +125,7 @@ def main_week7_single_executor(acc: AccountItem, sql: SQL, today_bridge: str):
                         today_bridge, task["log_suffix"], True, False, False
                     )
 
+            sleep_in_range(sec_from=60 + sleep_between_txs_in_sec[0], sec_to=60 + sleep_between_txs_in_sec[1])
             week_main(index=acc.id, private_key=acc.private_key, sql=sql, day=today_bridge, badge_id=6)
     logger.info(f'#{acc.id} | {acc.address}: week7 finish.')
 
@@ -369,7 +373,7 @@ def main_week_executor(sql: SQL, badge_id: int):
                                       today=today, total_accs_len=len(total_accs))
     else:
         logger.success(f'{today} [{datetime.now(timezone.utc).strftime("%H:%M:%S")}] | '
-                       f'every acc is processed with week_task.')
+                       f'every acc is processed with week{badge_id}_task.')
 
 
 def collector_executor(sql: SQL, accs: [AccountItem], today_bridge: str, today: str):

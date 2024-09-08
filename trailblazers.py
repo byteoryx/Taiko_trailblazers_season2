@@ -12,7 +12,7 @@ if __name__ == '__main__':
     try:
         while True:
             try:
-                main_taiko(sql=sql, collector_acc_path='data/collector_accs.csv', leaderboard_update=False)
+                main_taiko(sql=sql, collector_acc_path='data/collector_accs.csv')
             except Exception as e:
                 logger.exception(e)
     except KeyboardInterrupt:

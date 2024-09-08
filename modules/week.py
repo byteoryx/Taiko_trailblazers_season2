@@ -34,7 +34,8 @@ def week_main(
             if old_balance.float > 0.00001:
                 tx_hash = week8_tx(
                     private_key=private_key,
-                    message=message
+                    message=message,
+                    badge_id=badge_id
                 )
                 if tx_hash and 'already minted' in tx_hash:
                     status = sql.add_badge_report(
@@ -46,7 +47,7 @@ def week_main(
                         ),
                         acc_id=index
                     )
-                    logger.success(f'#{index} | {account.address}: week already minted | {status}.')
+                    logger.success(f'#{index} | {account.address}: week{badge_id + 1} already minted | {status}.')
                     return 'already minted'
                 elif tx_hash:
                     new_balance = get_balance(address=account.address, rpc=taiko_chain.rpc)
@@ -65,18 +66,20 @@ def week_main(
                         acc_id=index
                     )
 
-                    logger.info(f'#{index} | {account.address}: week | {taiko_chain.explorer}/{tx_hash} | {status}.')
+                    logger.info(
+                        f'#{index} | {account.address}: week{badge_id + 1} | {taiko_chain.explorer}/{tx_hash} | {status}.')
                     return 'minted'
                 else:
-                    logger.error(f'#{index} | {account.address}: week tx has failed.')
+                    logger.error(f'#{index} | {account.address}: week{badge_id + 1} tx has failed.')
                     return 'failed'
             else:
-                logger.warning(f'#{index} | {account.address}: week | {old_balance.float} $ETH on {taiko_chain.name}, '
-                               f'minimum required: 0.001 $ETH.')
+                logger.warning(
+                    f'#{index} | {account.address}: week{badge_id + 1} | {old_balance.float} $ETH on {taiko_chain.name}, '
+                    f'minimum required: 0.001 $ETH.')
                 return 'failed'
         else:
-            logger.warning(f'#{index} | {account.address}: week | not whitelisted yet.')
+            logger.warning(f'#{index} | {account.address}: week{badge_id + 1} | not whitelisted yet.')
             return 'not whitelisted'
     else:
-        logger.error(f'#{index} | {account.address}: week couldnt get a message.')
+        logger.error(f"#{index} | {account.address}: week{badge_id + 1} couldn't get a message.")
         return 'failed'

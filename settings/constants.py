@@ -1,4 +1,4 @@
-version = 'v1.9'
+version = 'v2.0'
 
 database_path = './data/data.db'
 private_keys_path = './data/private.txt'
@@ -29,7 +29,7 @@ hana_usdc_debt_contract = "0x0247606c3D3F62213bbC9D7373318369e6860eb1"
 hana_taiko_debt_contract = "0x1592Ff6f057d65a17Be56116e2B3cbfD4d2314C2"
 
 taiko_weth_contract = "0xA51894664A773981C6C112C43ce576f315d5b1B6"
-taiko_usdc_stg_contract = "0x1592Ff6f057d65a17Be56116e2B3cbfD4d2314C2"
+taiko_usdc_stg_contract = "0x19e26B0638bf63aa9fa4d14c6baF8D52eBE86C5C"
 taiko_usdc_contract = "0x07d83526730c7438048d55a4fc0b850e2aab6f0b"
 taiko_taiko_contract = "0xa9d23408b9ba935c230493c40c73824df71a0975"
 
@@ -48,11 +48,14 @@ brigade_nft_contract = "0x8a93AAE6D94680658012B887BfDd981A17661Ef4"
 crack_x_stack_contract = "0x009C32F03d6eEa4F6DA9DD3f8EC7Dc85824Ae0e6"
 zypher2048_contract = "0xd4629d312CdC663D062F3Fbc322534A9Df0151bC"
 week_badge_contract = "0xa20a8856e00F5ad024a55A663F06DCc419FFc4d5"
+meridian_deposited_usdc = "0xa3f248A1779364FB8B6b59304395229ea8241229"
 
 ritsu_swap_contract = "0x7160570BB153Edd0Ea1775EC2b2Ac9b65F1aB61B"
 ritsu_pools = {
     'USDC': "0xeF4a016F3E54c4520220adE7a496842ECbF83E09",
-    'TKO': "0x3BEbD0720F857DeF80af8dd44B5970A3749743Bc"
+    'TKO': "0x3BEbD0720F857DeF80af8dd44B5970A3749743Bc",
+    'USDCe': "0x7c38E9389B27668280E5aaAc372eBCb2ECc1c5E0",
+    'ETH-USDCe': "0xE75bfdbBE463A4c562F69B45f3A302faC4BB9E16"
 }
 ritsu_swap_abi = [
     {"inputs": [{"internalType": "address", "name": "_wETH", "type": "address"}], "stateMutability": "nonpayable",

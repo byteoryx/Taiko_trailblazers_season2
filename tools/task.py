@@ -6,7 +6,7 @@ from modules.conft import conft_mint
 from modules.crack_x_stack import crack_x_stack_main
 from modules.hana import hana_main
 from modules.kiloex import kiloex_main
-from modules.meridians import meridian_main
+from modules.meridians import meridian_main, meridian_withdraw_main
 from modules.omnihub import omnihub_mint
 from modules.orbiter import orbiter_bridge
 from modules.rhino_gm import rhino_gm
@@ -103,6 +103,10 @@ def brigade_nft_task(sql: SQL, acc: AccountItem, today: str):
 
 def meridian_task(sql: SQL, acc: AccountItem, today: str):
     meridian_main(index=acc.id, private_key=acc.private_key, sql=sql, day=today)
+
+
+def meridian_withdraw_task(sql: SQL, acc: AccountItem, today: str):
+    meridian_withdraw_main(index=acc.id, private_key=acc.private_key, sql=sql, day=today)
 
 
 def kiloex_task(sql: SQL, acc: AccountItem, today: str):

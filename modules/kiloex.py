@@ -6,7 +6,7 @@ from web3 import Web3
 
 from datatypes.account import DayBridgeItem
 from datatypes.crypto import eth_token, Balance, usdc_token
-from modules.ritsu import ritsu_single_swap
+from modules.ritsu import ritsu_eth_swap
 from sdk.sql import SQL
 from settings.chains import taiko_chain
 from settings.config import sleep_between_txs_in_sec
@@ -29,7 +29,9 @@ def kiloex_main(
 
     old_balance = get_balance(address=account.address, rpc=taiko_chain.rpc)
     if old_balance.float > minimum_balance_required:
-        required_balance_int = int(round(random.uniform(0.01, 0.02), random.randint(3, 6)) * 10 ** 6)
+        required_balance_int = int(round(random.uniform(
+            1.01, 1.1
+        ), random.randint(3, 6)) * 10 ** 6)
 
         eth_balance = get_balance(address=account.address, rpc=taiko_chain.rpc)
         token_balance = get_balance_of(contract=taiko_usdc_contract, address=account.address,
@@ -47,7 +49,7 @@ def kiloex_main(
             )
 
             if eth_balance.float > source_amount_to_spend.float:
-                ritsu_single_swap(
+                tx = ritsu_eth_swap(
                     index=index,
                     private_key=private_key,
                     source_token=eth_token,
@@ -56,6 +58,8 @@ def kiloex_main(
                     sql=sql,
                     source_amount_to_spend=source_amount_to_spend
                 )
+                if tx:
+                    sleep_in_range(sec_from=30 + sleep_between_txs_in_sec[0], sec_to=30 + sleep_between_txs_in_sec[1])
             else:
                 logger.warning(f'#{index} | {account.address}: ritsu_swap | '
                                f'not enough balance: want to spend: {source_amount_to_spend.float} $ETH, '
@@ -69,6 +73,7 @@ def kiloex_main(
             private_key=private_key
         )
         if approve_hash:
+            sleep_in_range(sec_from=30 + sleep_between_txs_in_sec[0], sec_to=30 + sleep_between_txs_in_sec[1])
             logger.info(
                 f'#{index} | {account.address}: approve to spend '
                 f'{token_balance.float} ${usdc_token.ticker} | '

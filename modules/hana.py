@@ -4,7 +4,7 @@ from loguru import logger
 from web3 import Web3
 
 from datatypes.crypto import usdc_token, taiko_token, eth_token, Balance, Token
-from modules.ritsu import ritsu_single_swap
+from modules.ritsu import ritsu_eth_swap
 from sdk.sql import SQL
 from settings.chains import taiko_chain
 from settings.config import leave_on_source, sleep_between_txs_in_sec, minimum_transfer
@@ -41,7 +41,7 @@ def hana_repay(index: int, address: str, private_key: str, day: str, sql: SQL):
                     )
 
                     if eth_balance.float > source_amount_to_spend.float:
-                        ritsu_single_swap(
+                        ritsu_eth_swap(
                             index=index,
                             private_key=private_key,
                             source_token=eth_token,

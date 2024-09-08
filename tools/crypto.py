@@ -15,7 +15,8 @@ from settings.constants import orbiter_contract, taiko_weth_contract, conft_cont
     omnihub_contract, rubyscore_contract, rhino_gm_price, hana_supply_contract, gas_multiplier, ritsu_swap_contract, \
     ritsu_swap_abi, xy_contracts, eth_contract, xy_aggregator_contract, ritsu_pools, hana_token_repay_borrow_contract, \
     taiko_usdc_contract, taiko_taiko_contract, hana_eth_repay_borrow_contract, brigade_nft_contract, \
-    crack_x_stack_contract, zypher2048_contract, week_badge_contract, meridian_deposit_contract, kiloex_deposit_contract
+    crack_x_stack_contract, zypher2048_contract, week_badge_contract, meridian_deposit_contract, \
+    kiloex_deposit_contract, taiko_usdc_stg_contract
 from tools.coingecko import get_asset_price
 
 
@@ -71,10 +72,18 @@ def get_balance_of(contract: str, address: str, denomination: int = 10 ** 18):
     )
 
 
-def wait_for_new_balance(old_balance: Balance, account: AccountItem, chain: ChainItem) -> Balance:
+def wait_for_new_balance(old_balance: Balance, account: AccountItem, chain: ChainItem, token: Token = None) -> Balance:
     tries = 0
     while True:
-        new_recipient_balance = get_balance(address=account.address, rpc=chain.rpc)
+        if not token:
+            new_recipient_balance = get_balance(address=account.address, rpc=chain.rpc)
+        else:
+            new_recipient_balance = get_balance_of(
+                address=account.address,
+                contract=token.address,
+                denomination=token.denomination
+            )
+
         if new_recipient_balance.float != old_balance.float:
             return new_recipient_balance
         else:
@@ -84,7 +93,7 @@ def wait_for_new_balance(old_balance: Balance, account: AccountItem, chain: Chai
             time.sleep(1)
 
 
-def sign_and_wait(w3: Web3, transaction: {}, private_key: str, timeout: int = 120):
+def sign_and_wait(w3: Web3, transaction: {}, private_key: str, timeout: int = 120, nonce_boosted: bool = False):
     account = w3.eth.account.from_key(private_key)
     signed_txn = w3.eth.account.sign_transaction(transaction, private_key)
     try:
@@ -101,8 +110,16 @@ def sign_and_wait(w3: Web3, transaction: {}, private_key: str, timeout: int = 12
     except ValueError as e:
         error_message = e.args[0]
         if 'replacement transaction underpriced' in error_message.get('message', ''):
-            logger.error(f"{account.address}: replacement transaction underpriced.")
-            return None
+            time.sleep(30)
+            if not nonce_boosted:
+                transaction['nonce'] += 1
+                nonce_boosted = True
+                logger.error(f"{account.address}: replacement transaction underpriced, nonce boosted.")
+            else:
+                logger.error(f"{account.address}: replacement transaction underpriced.")
+            return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key, nonce_boosted=nonce_boosted)
+        else:
+            logger.error(f"{account.address}: {error_message}.")
 
 
 def get_gas(w3: Web3()):
@@ -560,6 +577,43 @@ def hana_approve_tx(token: Token, approve_amount: int, private_key: str):
     return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
 
 
+def ritsu_approve_tx(token: Token, approve_amount: int, private_key: str):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    recipient = w3.to_checksum_address(token.address)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    data = '0x095ea7b3' + \
+           pad_to_32_bytes(ritsu_swap_contract[2:]) + \
+           pad_to_32_bytes(hex(approve_amount)[2:])
+
+    data = data.lower()
+
+    gas_limit = int(w3.eth.estimate_gas({
+        'from': account.address,
+        'to': recipient,
+        'value': 0,
+        'data': data
+    }) * gas_multiplier)
+
+    transaction = {
+        "chainId": taiko_chain.id,
+        "from": account.address,
+        "to": recipient,
+        "value": 0,
+        "data": data,
+        "gas": gas_limit,
+        "maxFeePerGas": max_fee_per_gas,
+        "maxPriorityFeePerGas": max_priority_fee_per_gas,
+        "nonce": nonce
+    }
+
+    return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+
+
 def meridian_approve_tx(token: Token, approve_amount: int, private_key: str):
     w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
     recipient = w3.to_checksum_address(token.address)
@@ -758,6 +812,18 @@ def get_steps(pair: str, address: str):
                 address=address
             ),
         ]
+    elif pair == 'USDCe-ETH':
+        return [generate_swap_step(
+            pool=ritsu_pools["USDCe"],
+            token_from=taiko_usdc_stg_contract,
+            address=address
+        )]
+    elif pair == 'ETH-USDCe':
+        return [generate_swap_step(
+            pool=ritsu_pools["USDCe"],
+            token_from=taiko_weth_contract,
+            address=address
+        )]
 
 
 def generate_swap_step(
@@ -769,13 +835,14 @@ def generate_swap_step(
            pad_to_32_bytes(address[2:]).lower() + \
            pad_to_32_bytes('2').lower()
 
-    return {
+    step = {
         'pool': pool,
         'data': data,
         'callback': "0x0000000000000000000000000000000000000000",
         'callbackData': "0x"
 
     }
+    return step
 
 
 def ritsu_swap_tx(private_key: str, token_in: Token,
@@ -992,7 +1059,7 @@ def week7_tx(private_key: str, message: str):
         logger.exception(e)
 
 
-def week8_tx(private_key: str, message: str):
+def week8_tx(private_key: str, message: str, badge_id: int):
     w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
     recipient = w3.to_checksum_address(week_badge_contract)
 
@@ -1003,7 +1070,7 @@ def week8_tx(private_key: str, message: str):
 
     data = '0x00257612' + \
            pad_to_32_bytes('40') + \
-           pad_to_32_bytes('6') + \
+           pad_to_32_bytes(str(badge_id)) + \
            pad_to_32_bytes('41') + \
            message + \
            pad_to_32_bytes('0')
@@ -1042,7 +1109,7 @@ def meridian_deposit_tx(private_key: str, deposit_int: int):
 
     max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
     data = '0xe8eda9df' + \
-           pad_to_32_bytes(taiko_usdc_contract[2:]) + \
+           pad_to_32_bytes(taiko_usdc_stg_contract[2:]) + \
            pad_to_32_bytes(hex(deposit_int)[2:]) + \
            pad_to_32_bytes(account.address[2:]) + \
            pad_to_32_bytes('0')
@@ -1078,3 +1145,69 @@ def meridian_deposit_tx(private_key: str, deposit_int: int):
         return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
     except Exception as e:
         logger.exception(e)
+
+
+def meridian_withdraw_tx(private_key: str, withdraw_int: int):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    recipient = w3.to_checksum_address(meridian_deposit_contract)
+
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+    data = '0x69328dec' + \
+           pad_to_32_bytes(taiko_usdc_stg_contract[2:]) + \
+           pad_to_32_bytes(hex(withdraw_int)[2:]) + \
+           pad_to_32_bytes(account.address[2:])
+
+    try:
+        gas_limit = int(w3.eth.estimate_gas({
+            'from': account.address,
+            'to': recipient,
+            'value': 0,
+            'data': data
+        }) * gas_multiplier)
+
+        transaction = {
+            "chainId": taiko_chain.id,
+            "from": account.address,
+            "to": recipient,
+            "data": data,
+            'value': 0,
+            "gas": gas_limit,
+            "maxFeePerGas": max_fee_per_gas,
+            "maxPriorityFeePerGas": max_priority_fee_per_gas,
+            "nonce": nonce
+        }
+
+        return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+    except Exception as e:
+        logger.exception(e)
+
+
+def get_allowance(private_key: str, spender_address: str, token: Token):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+
+    account = w3.eth.account.from_key(private_key)
+    owner_address = account.address
+
+    min_abi = [
+        {
+            "constant": True,
+            "inputs": [
+                {"name": "_owner", "type": "address"},
+                {"name": "_spender", "type": "address"}
+            ],
+            "name": "allowance",
+            "outputs": [{"name": "remaining", "type": "uint256"}],
+            "type": "function"
+        }
+    ]
+
+    token_contract = w3.eth.contract(address=w3.to_checksum_address(token.address), abi=min_abi)
+    allowance = token_contract.functions.allowance(owner_address, spender_address).call()
+
+    return Balance(
+        int=allowance,
+        float=round(allowance / token.denomination, 6)
+    )
