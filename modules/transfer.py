@@ -6,10 +6,10 @@ from web3 import Web3
 
 from datatypes.account import DayBridgeItem
 from sdk.sql import SQL
-from settings.chains import taiko_chain, ChainItem
-from settings.config import sleep_between_txs_in_sec
 from tools.crypto import get_balance, transfer_tx, wait_for_new_balance
 from tools.other_utils import sleep_in_range
+from user_data.chains import taiko_chain, ChainItem
+from user_data.config import sleep_between_txs_in_sec
 
 
 def self_transfer_main(
@@ -42,7 +42,7 @@ def self_transfer_main(
             new_costs = old_balance.float - new_balance.float
 
             volume, txs, costs = sql.get_volume_and_txs_by_id(day=day, acc_id=index)
-            status = sql.add_bridge_day_report(
+            status = sql.add_day_report(
                 day_item=DayBridgeItem(
                     id=index,
                     txs=txs,
@@ -55,7 +55,7 @@ def self_transfer_main(
             )
             logger.info(f'#{index} | {account.address}: self-transfer {amount_to_send} $ETH | '
                         f'{taiko_chain.explorer}/{tx_hash} | {status}.')
-            sleep_in_range(sec_from=30 + sleep_between_txs_in_sec[0], sec_to=30 + sleep_between_txs_in_sec[1])
+            sleep_in_range(sec_from=10 + sleep_between_txs_in_sec[0], sec_to=10 + sleep_between_txs_in_sec[1])
         else:
             logger.error(f'#{index} | {account.address}: self-transfer tx has failed.')
     else:
@@ -104,7 +104,7 @@ def burner_transfer_main(
 
                 new_costs = old_total_balance - new_total_balance
                 volume, txs, costs = sql.get_volume_and_txs_by_id(day=day, acc_id=index)
-                status = sql.add_bridge_day_report(
+                status = sql.add_day_report(
                     day_item=DayBridgeItem(
                         id=index,
                         txs=txs,
@@ -116,16 +116,16 @@ def burner_transfer_main(
                     acc_id=index
                 )
                 logger.info(f'#{index} | {main_account.address}: '
-                            f'burner-transfer to {burner_account.address} {amount_to_send} $ETH | '
+                            f'transfer {amount_to_send} $ETH to burner {burner_account.address} | '
                             f'{taiko_chain.explorer}/{tx_hash} | {status}.')
                 sleep_in_range(sec_from=30 + sleep_between_txs_in_sec[0], sec_to=30 + sleep_between_txs_in_sec[1])
             else:
                 logger.error(f'#{index} | {main_account.address}: '
-                             f'burner-transfer to {burner_account.address} burner tx has failed.')
+                             f'transfer to burner {burner_account.address} burner tx has failed.')
         else:
-            logger.warning(f'#{index} | {main_account.address}: burner-transfer | '
+            logger.warning(f'#{index} | {main_account.address}: transfer to burner | '
                            f'{old_main_balance.float} $ETH on {taiko_chain.name}, '
-                           f'minimum required: 0.001 $ETH.')
+                           f'minimum required: 0.0001 $ETH.')
 
     old_main_balance = get_balance(address=main_account.address, rpc=taiko_chain.rpc)
     old_burner_balance = get_balance(address=burner_account.address, rpc=taiko_chain.rpc)
@@ -134,7 +134,7 @@ def burner_transfer_main(
     if old_burner_balance.float > 0.00001:
         new_main_balance = get_balance(address=main_account.address, rpc=taiko_chain.rpc)
 
-        amount_to_send = old_burner_balance.float - random.uniform(0.00005, 0.00006)
+        amount_to_send = old_burner_balance.float - random.uniform(0.00003, 0.00006)
         if amount_to_send > 0:
             burner_tx_hash = transfer_tx(
                 private_key=burner_private_key,
@@ -152,7 +152,7 @@ def burner_transfer_main(
                 new_costs = old_total_balance - new_total_balance
 
                 volume, txs, costs = sql.get_volume_and_txs_by_id(day=day, acc_id=index)
-                status = sql.add_bridge_day_report(
+                status = sql.add_day_report(
                     day_item=DayBridgeItem(
                         id=index,
                         txs=txs,
@@ -164,20 +164,17 @@ def burner_transfer_main(
                     acc_id=index
                 )
                 logger.info(f'#{index} | {main_account.address}: '
-                            f'transfer from {burner_account.address} {round(amount_to_send, 6)} $ETH | '
+                            f'transfer {round(amount_to_send, 6)} $ETH from burner {burner_account.address} | '
                             f'{taiko_chain.explorer}/{burner_tx_hash} | {status}.')
                 sleep_in_range(sec_from=30 + sleep_between_txs_in_sec[0], sec_to=30 + sleep_between_txs_in_sec[1])
             else:
                 logger.error(
-                    f'#{index} | {burner_account.address}: transfer from {burner_account.address} tx has failed.')
+                    f'#{index} | {burner_account.address}: '
+                    f'transfer {round(amount_to_send, 6)} $ETH from burner {burner_account.address} tx has failed.')
         else:
-            logger.warning(f'#{index} | {main_account.address}: transfer from {burner_account.address} | '
-                           f'{old_burner_balance.float} $ETH on {taiko_chain.name}, '
-                           f'minimum required: 0.00001 $ETH.')
+            logger.info(f'#{index} | {main_account.address}: nothing to transfer from burner {burner_account.address}.')
     else:
-        logger.warning(f'#{index} | {main_account.address}: transfer from {burner_account.address} | '
-                       f'{old_burner_balance.float} $ETH on {taiko_chain.name}, '
-                       f'minimum required: 0.00001 $ETH.')
+        logger.info(f'#{index} | {main_account.address}: nothing to transfer from burner {burner_account.address}.')
 
 
 def transfer_main(
@@ -219,7 +216,7 @@ def transfer_main(
 
             logger.info(f'#{index} | {account.address}: transfer to [{address}] {round(amount_to_send, 6)} $ETH | '
                         f'{chain.explorer}/{tx_hash} | new balance {new_balance.float} on {chain.name}.')
-            sleep_in_range(sec_from=30 + sleep_between_txs_in_sec[0], sec_to=30 + sleep_between_txs_in_sec[1])
+            sleep_in_range(sec_from=10 + sleep_between_txs_in_sec[0], sec_to=10 + sleep_between_txs_in_sec[1])
         else:
             logger.error(f'#{index} | {account.address}: transfer to [{address}] tx has failed.')
     else:

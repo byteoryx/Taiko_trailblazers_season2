@@ -5,7 +5,7 @@ from sdk.pycoingecko import CoinGeckoAPI
 
 def get_asset_price(
         ticker: str,
-        proxy: str = 'socks5://aqvja29v66:o7kd9j4gio@premium2.travchisproxies.com:51204'
+        proxy: str
 ) -> float:
     cg = CoinGeckoAPI(proxy=proxy)
     if 'usd' in ticker:

@@ -5,8 +5,8 @@ from web3 import Web3
 
 from datatypes.account import DayBridgeItem
 from sdk.sql import SQL
-from settings.chains import taiko_chain
-from tools.crypto import get_balance, brigade_mint_tx, crack_x_stack_tx, zypher2048_tx
+from tools.crypto import get_balance, zypher2048_tx
+from user_data.chains import taiko_chain
 
 
 def zypher2048_main(
@@ -28,7 +28,7 @@ def zypher2048_main(
             new_costs = old_balance.float - new_balance.float
 
             volume, txs, costs = sql.get_volume_and_txs_by_id(day=day, acc_id=index)
-            status = sql.add_bridge_day_report(
+            status = sql.add_day_report(
                 day_item=DayBridgeItem(
                     id=index,
                     txs=txs,

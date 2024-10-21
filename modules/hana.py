@@ -3,20 +3,36 @@ import random
 from loguru import logger
 from web3 import Web3
 
-from datatypes.crypto import usdc_token, taiko_token, eth_token, Balance, Token
+from data.constants import (
+    hana_weth_supplied_contract,
+    hana_taiko_debt_contract,
+    hana_usdc_debt_contract,
+    hana_weth_debt_contract,
+    taiko_taiko_contract,
+    taiko_usdc_contract,
+    eth_token,
+    taiko_token,
+    usdc_token
+)
+from datatypes.crypto import Balance, Token
 from modules.ritsu import ritsu_eth_swap
 from sdk.sql import SQL
-from settings.chains import taiko_chain
-from settings.config import leave_on_source, sleep_between_txs_in_sec, minimum_transfer
-from settings.constants import hana_weth_supplied_contract, hana_taiko_debt_contract, hana_usdc_debt_contract, \
-    hana_weth_debt_contract, taiko_taiko_contract, taiko_usdc_contract
 from tools.coingecko import get_asset_price
-from tools.crypto import get_balance, hana_withdraw_tx, get_balance_of, hana_repay_tx, hana_approve_tx, hana_supply_tx, \
+from tools.crypto import (
+    get_balance,
+    hana_withdraw_tx,
+    get_balance_of,
+    hana_repay_tx,
+    hana_approve_tx,
+    hana_supply_tx,
     hana_borrow_tx
-from tools.other_utils import sleep_in_range
+)
+from tools.other_utils import sleep_in_range, get_leave_on_source
+from user_data.chains import taiko_chain
+from user_data.config import sleep_between_txs_in_sec, minimum_transfer
 
 
-def hana_repay(index: int, address: str, private_key: str, day: str, sql: SQL):
+def hana_repay(index: int, address: str, tier: str, private_key: str, day: str, sql: SQL):
     def repay_debt(debt_balance: Balance, token: Token, token_contract: str = '', token_denomination: int = 10 ** 18):
         if debt_balance.int:
             if token.ticker != 'ETH':
@@ -91,6 +107,8 @@ def hana_repay(index: int, address: str, private_key: str, day: str, sql: SQL):
                 debt_amount.float = round(debt_token_actual_balance.int / token.denomination, 6)
                 debt_amount.int = debt_token_actual_balance.int
             else:
+                leave_on_source = get_leave_on_source(tier=tier, chain='taiko')
+
                 debt_amount.float = round(debt_token_actual_balance.float - leave_on_source, 6)
                 debt_amount.int = int((debt_token_actual_balance.float - leave_on_source) * 10 ** 18)
 
@@ -176,6 +194,7 @@ def hana_borrow(index: int, address: str, private_key: str):
 def hana_main(
         index: int,
         private_key: str,
+        tier: str,
         sql: SQL,
         day: str,
         multiplier_range: (float, float),
@@ -184,9 +203,11 @@ def hana_main(
     w3 = Web3()
     account = w3.eth.account.from_key(private_key)
 
+    leave_on_source = get_leave_on_source(tier=tier, chain='taiko')
+
     if only_withdraw:
-        hana_repay(index=index, address=account.address, private_key=private_key, day=day, sql=sql)
-        hana_repay(index=index, address=account.address, private_key=private_key, day=day, sql=sql)
+        hana_repay(index=index, address=account.address, private_key=private_key, day=day, sql=sql, tier=tier)
+        hana_repay(index=index, address=account.address, private_key=private_key, day=day, sql=sql, tier=tier)
     else:
         old_balance = get_balance(address=account.address, rpc=taiko_chain.rpc)
         supply_amount = round(
@@ -209,7 +230,7 @@ def hana_main(
 
         if random.choice([True, False]):
             hana_borrow(index=index, address=account.address, private_key=private_key)
-            hana_repay(index=index, address=account.address, private_key=private_key, day=day, sql=sql)
+            hana_repay(index=index, address=account.address, private_key=private_key, day=day, sql=sql, tier=tier)
 
     weth_supplied_balance = get_balance_of(contract=hana_weth_supplied_contract, address=account.address)
     if weth_supplied_balance.float > 0.0001:

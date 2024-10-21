@@ -1,18 +1,21 @@
 import sqlite3
 
 from datatypes.account import AccountItem, DayBridgeItem, TrailblazersItem, BurnerItem, BadgeItem
+from user_data.config import db_filename
 
 
 class SQL:
-    def __init__(self, database: str = rf"../data/data.db"):
-        self.connection = sqlite3.connect(database, check_same_thread=False)
+    def __init__(self, database_path: str = rf"../data/{db_filename}.db"):
+        self.connection = sqlite3.connect(database_path, check_same_thread=False)
         self.connection.execute("PRAGMA foreign_keys = ON;")
         self.accs_table = 'accs'
         self.trailblazers_table = 'trailblazers'
         self.burner_table = 'burner'
+        self.taikodrips_table = 'taikodrips'
         self.create_acc_table()
         self.create_trailblazers_table()
         self.create_burner_table()
+        self.create_taikodrips_table()
 
     def commit(self):
         self.connection.commit()
@@ -129,6 +132,36 @@ class SQL:
 
         return status
 
+    def update_taikodrip_lockups(self, acc: AccountItem, lockup_string: str):
+        status = ""
+
+        with self.connection:
+            cursor = self.connection.cursor()
+
+            cursor.execute(f'SELECT stakes FROM {self.taikodrips_table} WHERE id = ?', (acc.id,))
+            current_stakes = cursor.fetchone()
+
+            if current_stakes:
+                current_stakes = current_stakes[0]
+
+                if current_stakes != lockup_string:
+                    cursor.execute(f'''
+                        UPDATE {self.taikodrips_table}
+                        SET stakes = ?
+                        WHERE id = ?
+                    ''', (lockup_string, acc.id))
+                    status = f"updated: {current_stakes if current_stakes else 'no stakes'} > {lockup_string}"
+                    self.commit()
+            else:
+                cursor.execute(f'''
+                    INSERT INTO {self.taikodrips_table} (id, stakes)
+                    VALUES (?, ?)
+                ''', (acc.id, lockup_string))
+                status = f"inserted: {lockup_string}"
+                self.commit()
+
+        return status
+
     def get_owned_badges(self, id: int):
         with self.connection:
             result = self.connection.cursor().execute(f'SELECT badge_ids FROM {self.trailblazers_table} WHERE id = ?',
@@ -141,11 +174,13 @@ class SQL:
     def add_acc(self, acc: AccountItem):
         if not self.is_row_exist(table=self.accs_table, param='private_key', value=acc.private_key):
             with self.connection:
-                self.connection.cursor().execute(f"INSERT INTO {self.accs_table} "
-                                                 f"(id, private_key, proxy, owner, tier, last_edited) "
-                                                 f"VALUES (?, ?, ?, ?, ?, ?)",
-                                                 (acc.id, acc.private_key, acc.proxy, acc.owner, acc.tier,
-                                                  acc.last_edited))
+                self.connection.cursor().execute(
+                    f"INSERT INTO {self.accs_table} "
+                    f"(id, private_key, cex_address, proxy, owner, tier, last_edited) "
+                    f"VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (acc.id, acc.private_key, acc.cex_address, acc.proxy, acc.owner, acc.tier,
+                     acc.last_edited)
+                )
                 self.commit()
             return True
         else:
@@ -168,7 +203,7 @@ class SQL:
             cursor = self.connection.cursor()
             query = f"""
                 SELECT 
-                    COALESCE(volume, 0), 
+                    COALESCE(bridge_volume, 0), 
                     COALESCE(txs, 0), 
                     COALESCE(costs, 0) 
                 FROM {day} 
@@ -202,45 +237,74 @@ class SQL:
             else:
                 return ''
 
-    def add_bridge_day_report(self, day_item: DayBridgeItem, day: str, acc_id: int):
-        status = ""
-
-        exists = self.is_row_exist(table=day, param='id', value=acc_id)
-
+    def get_taikodrips_lockups(self, acc_id: int):
         with self.connection:
             cursor = self.connection.cursor()
+            query = f"""
+                SELECT 
+                    private_key
+                FROM {self.taikodrips_table} 
+                WHERE id = ?
+            """
 
-            if exists:
-                cursor.execute(f"SELECT volume FROM {day} WHERE id = ?", (acc_id,))
-                current_volume = cursor.fetchone()[0]
+            cursor.execute(query, (acc_id,))
+            result = cursor.fetchone()
 
-                cursor.execute(f"SELECT txs FROM {day} WHERE id = ?", (acc_id,))
-                current_txs = cursor.fetchone()[0]
+            if result:
+                return result[0]
+            else:
+                return ''
 
-                cursor.execute(f"SELECT costs FROM {day} WHERE id = ?", (acc_id,))
-                current_costs = cursor.fetchone()[0]
+    def add_day_report(self, day_item: DayBridgeItem, day: str, acc_id: int):
+        try:
+            status = ""
 
-                if current_costs != day_item.costs:
-                    if day_item.volume >= 0 and 0 <= day_item.costs < 0.01:
+            exists = self.is_row_exist(table=day, param='id', value=acc_id)
+
+            with self.connection:
+                cursor = self.connection.cursor()
+
+                if exists:
+                    cursor.execute(f"SELECT bridge_volume FROM {day} WHERE id = ?", (acc_id,))
+                    current_volume = cursor.fetchone()[0]
+
+                    cursor.execute(f"SELECT txs FROM {day} WHERE id = ?", (acc_id,))
+                    current_txs = cursor.fetchone()[0]
+
+                    cursor.execute(f"SELECT costs FROM {day} WHERE id = ?", (acc_id,))
+                    current_costs = cursor.fetchone()[0]
+
+                    if current_costs != day_item.costs:
+                        if day_item.volume >= 0 and 0 <= day_item.costs < 0.01:
+                            cursor.execute(f"UPDATE {day} "
+                                           f"SET bridge_volume = ?, txs = ?, costs = ?, last_edited = ? WHERE id = ?",
+                                           (
+                                               day_item.volume, day_item.txs, day_item.costs, day_item.last_edited,
+                                               acc_id))
+                            status = f"daily costs updated: {round(current_costs, 6)} > {round(day_item.costs, 6)}"
+                            self.commit()
+                        else:
+                            status = f'{day_item.volume=} < 0, {day_item.costs=} > 0.003'
+                    elif current_txs != day_item.txs:
                         cursor.execute(f"UPDATE {day} "
-                                       f"SET volume = ?, txs = ?, costs = ?, last_edited = ? WHERE id = ?",
+                                       f"SET bridge_volume = ?, txs = ?, costs = ?, last_edited = ? WHERE id = ?",
                                        (day_item.volume, day_item.txs, day_item.costs, day_item.last_edited, acc_id))
-                        status = f"daily costs updated: {round(current_costs, 6)} > {round(day_item.costs, 6)}"
+                        status = f"daily txs updated: {current_txs} > {day_item.txs}"
+                        self.commit()
+                else:
+                    if day_item.volume >= 0 and 0 <= day_item.costs < 0.01:
+                        cursor.execute(f"INSERT INTO {day} "
+                                       f"(id, bridge_volume, txs, costs, last_edited) "
+                                       f"VALUES (?, ?, ?, ?, ?)",
+                                       (acc_id, day_item.volume, day_item.txs, day_item.costs, day_item.last_edited))
+                        status = f"costs inserted: 0 > {round(day_item.costs, 6)}"
                         self.commit()
                     else:
                         status = f'{day_item.volume=} < 0, {day_item.costs=} > 0.003'
-            else:
-                if day_item.volume >= 0 and 0 <= day_item.costs < 0.01:
-                    cursor.execute(f"INSERT INTO {day} "
-                                   f"(id, volume, txs, costs, last_edited) "
-                                   f"VALUES (?, ?, ?, ?, ?)",
-                                   (acc_id, day_item.volume, day_item.txs, day_item.costs, day_item.last_edited))
-                    status = f"costs inserted: 0 > {round(day_item.costs, 6)}"
-                    self.commit()
-                else:
-                    status = f'{day_item.volume=} < 0, {day_item.costs=} > 0.003'
 
-        return status
+            return status
+        except:
+            pass
 
     def add_trailblazers_report(self, trailblazers: TrailblazersItem):
         status = ""
@@ -256,10 +320,8 @@ class SQL:
 
                 if current_points != trailblazers.points:
                     cursor.execute(f"UPDATE {self.trailblazers_table} "
-                                   f"SET domain = ?, badge_ids = ?, galxe_points = ?, points = ?, rank = ?, last_edited = ? WHERE id = ?",
+                                   f"SET domain = ?, points = ?, rank = ?, last_edited = ? WHERE id = ?",
                                    (trailblazers.domain,
-                                    trailblazers.badge_ids,
-                                    trailblazers.galxe_points,
                                     trailblazers.points,
                                     trailblazers.rank,
                                     trailblazers.last_edited,
@@ -268,12 +330,10 @@ class SQL:
                     self.commit()
             else:
                 cursor.execute(f"INSERT INTO {self.trailblazers_table} "
-                               f"(id, domain, badge_ids, galxe_points, points, rank, last_edited) "
-                               f"VALUES (?, ?, ?, ?, ?, ?, ?)",
+                               f"(id, domain, points, rank, last_edited) "
+                               f"VALUES (?, ?, ?, ?, ?)",
                                (trailblazers.id,
                                 trailblazers.domain,
-                                trailblazers.badge_ids,
-                                trailblazers.galxe_points,
                                 trailblazers.points,
                                 trailblazers.rank,
                                 trailblazers.last_edited))
@@ -312,7 +372,7 @@ class SQL:
 
         return results
 
-    def _get_tables_with_keyword(self, keyword: str = "Bridge"):
+    def _get_tables_with_keyword(self, keyword: str = "Report"):
         with self.connection:
             cursor = self.connection.cursor()
             query = "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE ?"
@@ -331,7 +391,7 @@ class SQL:
                 query = f"""
                     SELECT 
                         COALESCE(SUM(costs), 0), 
-                        COALESCE(SUM(volume), 0) 
+                        COALESCE(SUM(bridge_volume), 0) 
                     FROM {table}
                     WHERE id = ?
                 """
@@ -359,7 +419,7 @@ class SQL:
     def get_today_volume(self, day: str, acc_id: int):
         with self.connection:
             cursor = self.connection.cursor()
-            query = f"SELECT volume FROM {day} WHERE id = ?"
+            query = f"SELECT bridge_volume FROM {day} WHERE id = ?"
             cursor.execute(query, (acc_id,))
             result = cursor.fetchone()
 
@@ -386,6 +446,7 @@ class SQL:
                 CREATE TABLE IF NOT EXISTS {self.accs_table} (
                     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
                     "private_key" TEXT,
+                    "cex_address" TEXT,
                     "proxy" TEXT,
                     "owner" TEXT,
                     "tier" TEXT,
@@ -394,13 +455,13 @@ class SQL:
             """)
             self.connection.commit()
 
-    def create_bridge_day_table(self, day: str):
+    def create_report_day_table(self, day: str):
         with self.connection:
             self.connection.cursor().execute(f"""
                 CREATE TABLE IF NOT EXISTS {day} (
                     "id" INTEGER NOT NULL,
                     "txs" INTEGER,
-                    "volume" REAL,
+                    "bridge_volume" REAL,
                     "costs" REAL,
                     "last_edited" TEXT,
                     PRIMARY KEY("id"),
@@ -416,7 +477,6 @@ class SQL:
                     "id" INTEGER NOT NULL,
                     "domain" TEXT,
                     "badge_ids" TEXT,
-                    "galxe_points" INTEGER,
                     "points" INTEGER,
                     "rank" INTEGER,
                     "last_edited" TEXT,
@@ -445,6 +505,19 @@ class SQL:
                 CREATE TABLE IF NOT EXISTS badge{badge_id} (
                     "id" INTEGER NOT NULL,
                     "minted" TEXT,
+                    "last_edited" TEXT,
+                    PRIMARY KEY("id"),
+                    FOREIGN KEY("id") REFERENCES {self.accs_table}("id")
+                )
+            """)
+            self.connection.commit()
+
+    def create_taikodrips_table(self):
+        with self.connection:
+            self.connection.cursor().execute(f"""
+                CREATE TABLE IF NOT EXISTS {self.taikodrips_table} (
+                    "id" INTEGER NOT NULL,
+                    "stakes" TEXT,
                     "last_edited" TEXT,
                     PRIMARY KEY("id"),
                     FOREIGN KEY("id") REFERENCES {self.accs_table}("id")

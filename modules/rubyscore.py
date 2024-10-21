@@ -5,8 +5,8 @@ from web3 import Web3
 
 from datatypes.account import DayBridgeItem
 from sdk.sql import SQL
-from settings.chains import taiko_chain
 from tools.crypto import get_balance, rubyscore_vote_tx
+from user_data.chains import taiko_chain
 
 
 def rubyscore_vote(
@@ -28,7 +28,7 @@ def rubyscore_vote(
             new_costs = old_balance.float - new_balance.float
 
             volume, txs, costs = sql.get_volume_and_txs_by_id(day=day, acc_id=index)
-            status = sql.add_bridge_day_report(
+            status = sql.add_day_report(
                 day_item=DayBridgeItem(
                     id=index,
                     txs=txs,

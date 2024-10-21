@@ -7,6 +7,7 @@ class AccountItem(BaseModel):
     id: Optional[int]
     private_key: str
     address: Optional[str]
+    cex_address: str
     proxy: str
     owner: str
     tier: str
@@ -31,8 +32,7 @@ class DayBridgeItem(BaseModel):
 class TrailblazersItem(BaseModel):
     id: Optional[int]
     domain: str
-    badge_ids: str
-    galxe_points: int
+    badge_ids: Optional[str]
     points: int
     rank: int
     last_edited: Optional[str]

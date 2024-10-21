@@ -4,12 +4,12 @@ from datetime import datetime
 from loguru import logger
 from web3 import Web3
 
+from data.constants import rhino_contracts_path
 from datatypes.account import DayBridgeItem
 from sdk.sql import SQL
-from settings.chains import taiko_chain
-from settings.constants import rhino_contracts_path
 from tools.crypto import get_balance, rhino_tx
 from tools.other_utils import extract_rhino_contracts
+from user_data.chains import taiko_chain
 
 
 def rhino_gm(
@@ -34,7 +34,7 @@ def rhino_gm(
                 new_costs = old_balance.float - new_balance.float
 
                 volume, txs, costs = sql.get_volume_and_txs_by_id(day=day, acc_id=index)
-                status = sql.add_bridge_day_report(
+                status = sql.add_day_report(
                     day_item=DayBridgeItem(
                         id=index,
                         txs=txs,

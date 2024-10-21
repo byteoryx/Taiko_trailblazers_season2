@@ -1,7 +1,7 @@
 import random
 
 from datatypes.account import AccountItem
-from modules.brigade import brigade_mint
+from modules.brigade import brigade_main
 from modules.conft import conft_mint
 from modules.crack_x_stack import crack_x_stack_main
 from modules.hana import hana_main
@@ -11,13 +11,14 @@ from modules.omnihub import omnihub_mint
 from modules.orbiter import orbiter_bridge
 from modules.rhino_gm import rhino_gm
 from modules.rubyscore import rubyscore_vote
+from modules.taikodrips import taikodrips_main
 from modules.transfer import self_transfer_main, burner_transfer_main
 from modules.wrap import wrap_main
 from modules.xy import xy_bridge
 from modules.zypher2048 import zypher2048_main
 from sdk.sql import SQL
-from settings.chains import source_chains, taiko_chain, destination_chains
-from settings.config import minimum_transfer, minimum_withdraw_from_taiko_transfer, bridges_to_use
+from user_data.chains import source_chains, taiko_chain, destination_chains
+from user_data.config import minimum_transfer, bridges_to_use
 
 
 def bridge_deposit(sql: SQL, acc: AccountItem, today: str):
@@ -25,33 +26,56 @@ def bridge_deposit(sql: SQL, acc: AccountItem, today: str):
     for chain in source_chains:
         bridge_to_use = random.choice(bridges_to_use)
         if 'orbiter' in bridge_to_use:
-            orbiter_bridge(index=acc.id, private_key=acc.private_key, source_chain=chain,
-                           recipient_chain=taiko_chain, day=today, sql=sql,
-                           multiplier_range=(0.91, 0.95), minimum_transfer=minimum_transfer * 0.8)
+            orbiter_bridge(
+                account_item=acc,
+                source_chain=chain,
+                recipient_chain=taiko_chain,
+                day=today,
+                sql=sql,
+                multiplier_range=(0.91, 1),
+                minimum_transfer=minimum_transfer
+            )
         elif 'xy' in bridge_to_use:
-            xy_bridge(index=acc.id, private_key=acc.private_key, source_chain=chain,
-                      recipient_chain=taiko_chain, day=today, sql=sql,
-                      multiplier_range=(0.91, 0.95), minimum_transfer=minimum_transfer * 0.8)
+            xy_bridge(
+                account_item=acc,
+                source_chain=chain,
+                recipient_chain=taiko_chain,
+                day=today,
+                sql=sql,
+                multiplier_range=(0.91, 1),
+                minimum_transfer=minimum_transfer
+            )
 
 
 def bridge_withdraw(sql: SQL, acc: AccountItem, today: str):
     bridge_to_use = random.choice(bridges_to_use)
     if 'orbiter' in bridge_to_use:
-        orbiter_bridge(index=acc.id, private_key=acc.private_key, source_chain=taiko_chain,
-                       recipient_chain=random.choice(destination_chains), day=today, sql=sql,
-                       multiplier_range=(1, 1), minimum_transfer=minimum_withdraw_from_taiko_transfer)
+        orbiter_bridge(
+            account_item=acc,
+            source_chain=taiko_chain,
+            recipient_chain=random.choice(destination_chains),
+            day=today,
+            sql=sql,
+            multiplier_range=(0.91, 1),
+            minimum_transfer=minimum_transfer
+        )
     elif 'xy' in bridge_to_use:
-        xy_bridge(index=acc.id, private_key=acc.private_key, source_chain=taiko_chain,
-                  recipient_chain=random.choice(destination_chains), day=today, sql=sql,
-                  multiplier_range=(1, 1), minimum_transfer=minimum_withdraw_from_taiko_transfer)
+        xy_bridge(
+            account_item=acc,
+            source_chain=taiko_chain,
+            recipient_chain=random.choice(destination_chains),
+            day=today,
+            sql=sql,
+            multiplier_range=(0.91, 1),
+            minimum_transfer=minimum_transfer)
 
 
 def wrap_task(sql: SQL, acc: AccountItem, today: str):
-    wrap_main(index=acc.id, private_key=acc.private_key, multiplier_range=(0.91, 0.95))
+    wrap_main(index=acc.id, private_key=acc.private_key, multiplier_range=(0.5, 0.8))
 
 
 def unwrap_task(sql: SQL, acc: AccountItem, today: str):
-    wrap_main(index=acc.id, private_key=acc.private_key, multiplier_range=(0.91, 0.95), unwrap_only=True)
+    wrap_main(index=acc.id, private_key=acc.private_key, multiplier_range=(1, 1), unwrap_only=True)
 
 
 def conft_task(sql: SQL, acc: AccountItem, today: str):
@@ -98,7 +122,7 @@ def burner_withdraw_task(sql: SQL, acc: AccountItem, today: str):
 
 
 def brigade_nft_task(sql: SQL, acc: AccountItem, today: str):
-    brigade_mint(index=acc.id, private_key=acc.private_key, sql=sql, day=today)
+    brigade_main(index=acc.id, private_key=acc.private_key, sql=sql, day=today)
 
 
 def meridian_task(sql: SQL, acc: AccountItem, today: str):
@@ -119,3 +143,7 @@ def crack_x_stack_task(sql: SQL, acc: AccountItem, today: str):
 
 def zypher2048_task(sql: SQL, acc: AccountItem, today: str):
     zypher2048_main(index=acc.id, private_key=acc.private_key, sql=sql, day=today)
+
+
+def taikodrips_task(sql: SQL, acc: AccountItem, today: str):
+    taikodrips_main(account=acc, sql=sql, day=today)

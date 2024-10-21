@@ -1,4 +1,4 @@
-# TAIKO-TRAILBLAZERS
+# TAIKO-TRAILBLAZERS: SEASON2
 
 ## Установка Python 3.10 и pip 3.10 на Ubuntu
 
@@ -7,14 +7,14 @@
 Перед началом установки рекомендуется обновить системные пакеты:
 
 ```bash
-sudo apt update && sudo apt upgrade
+sudo apt update && sudo apt upgrade -y
 ```
 
 ### Шаг 2: Установите зависимости
 Для успешной установки Python 3.10, вам потребуются некоторые зависимости:
 
 ```bash
-sudo apt install software-properties-common
+sudo apt install software-properties-common -y
 ```
 
 ### Шаг 3: Добавьте PPA для Python 3.10
@@ -28,7 +28,7 @@ sudo add-apt-repository ppa:deadsnakes/ppa
 После добавления репозитория, установите Python 3.10:
 
 ```bash
-sudo apt update && sudo apt install python3.10
+sudo apt update && sudo apt install python3.10 -y
 ```
 
 ### Шаг 5: Установите pip для Python 3.10
@@ -77,14 +77,14 @@ pip3.10 install -r requirements.txt
 ```
 
 ### Шаг 5: Настройка конфигурации
-Откройте файл `settings/config.py` в любом текстовом редакторе и настройте параметры согласно вашим требованиям.
-<br><br>Создайте файл `data/private_key.txt` и добавьте в него ваши приватные ключи и прокси.
-<br><br>Создайте файл `data/rhino.txt` и добавьте в него ссылки на контракты (https://app.rhino.fi/realm/trackers/TAIKO/deploy-and-interact).
+Откройте файл `user_data/config.py` в любом текстовом редакторе и настройте параметры согласно вашим требованиям.
+<br><br>Создайте файл `user_data/private.txt` и добавьте в него ваши приватные ключи, прокси и адреса депозитов на биржи.
+<br><br>Создайте файл `user_data/rhino.txt` и добавьте в него ссылки на контракты (https://app.rhino.fi/realm/trackers/TAIKO/deploy-and-interact).
 Если вы не планируете использовать rhino_gm, вы можете оставить файл пустым.
 
 ### Шаг 6: Настройка тиров
 
-В файле `settings/tiers.py` вы можете настраивать различные тиры для аккаунтов.
+В файле `user_data/tiers.py` вы можете настраивать различные тиры для аккаунтов.
 
 Тиры нужны для того, чтобы распределить аккаунты в группы с разными лимитами по сжиганию газа.
 
@@ -101,7 +101,7 @@ python3.10 sql_add.py
 который вы можете открывать и просматривать прогресс в SQLite3 или в любом удобном инструменте-аналоге.
 ### Шаг 8: Настройка сетей для бриджей
 
-В файле `settings/chains.py` вы можете включать/выключать сети, редактировать rpc:
+В файле `user_data/chains.py` вы можете включать/выключать сети, редактировать rpc:
 
 - `source_chains` - сети, из которых бот будет бриджить баланс в тайко;
 - `destination_chains` - сети, в которые бот будет выводить баланс из сети тайко после окончания цикла.

@@ -1,0 +1,2 @@
+private_key1##cex_public1##socks5://log:pass@ip:port
+private_key2##cex_public2##http://log:pass@ip:port

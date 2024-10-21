@@ -6,9 +6,9 @@ from web3 import Web3
 
 from datatypes.account import DayBridgeItem, BadgeItem
 from sdk.sql import SQL
-from settings.chains import taiko_chain
 from tools.crypto import get_balance, get_badge_signature, week8_tx
 from tools.trailblazers import get_week_badge_message
+from user_data.chains import taiko_chain
 
 
 def week_main(
@@ -16,6 +16,7 @@ def week_main(
         private_key: str,
         sql: SQL,
         day: str,
+        proxy: str,
         badge_id: int = 7
 ):
     w3 = Web3()
@@ -26,7 +27,8 @@ def week_main(
     message = get_week_badge_message(address=account.address,
                                      signature=signature,
                                      timestamp=timestamp,
-                                     badge_id=badge_id)
+                                     badge_id=badge_id,
+                                     proxy=proxy)
 
     if message:
         if 'Not Whitelisted' not in str(message):
@@ -54,7 +56,7 @@ def week_main(
                     new_costs = old_balance.float - new_balance.float
 
                     volume, txs, costs = sql.get_volume_and_txs_by_id(day=day, acc_id=index)
-                    status = sql.add_bridge_day_report(
+                    status = sql.add_day_report(
                         day_item=DayBridgeItem(
                             id=index,
                             txs=txs,

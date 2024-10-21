@@ -3,11 +3,12 @@ import json
 import requests
 from loguru import logger
 
+from data.constants import badge_collection_contract
 from datatypes.conft import CollectionItemsResponse, Nft, NonceResponse
 from sdk.eth_account import Account
 from sdk.eth_account.messages import encode_structured_data
 from sdk.sql import SQL
-from tools.trailblazers import get_proxied_session
+from tools.session import get_proxied_session
 
 
 def get_nft_items(address: str, session: requests.Session()):
@@ -16,9 +17,8 @@ def get_nft_items(address: str, session: requests.Session()):
     page = 0
     while True:
         page += 1
-        url = f"https://conft.app/wallet/taiko/{address}/nft/" \
-              f"my-nfts?p={page}&" \
-              f"_data=routes%2Fwallet.%24blockchain.%24address.nft.my-nfts"
+        url = f"https://conft.app/wallet/taiko/{address}/nft/my-nfts?" \
+              f"p={page}&_data=routes%2Fwallet.%24blockchain.%24address.nft.my-nfts"
         response = session.get(url=url)
         parsed_response = CollectionItemsResponse.parse_obj(json.loads(response.content))
         if parsed_response.walletNfts:
@@ -36,7 +36,7 @@ def get_badge_items(items: [Nft]):
     badge_items = []
 
     for item in items:
-        if item.contractAddress.lower() == '0xa20a8856e00f5ad024a55a663f06dcc419ffc4d5'.lower():
+        if item.contractAddress.lower() == badge_collection_contract.lower():
             badge_items.append(item)
 
     return badge_items
@@ -152,7 +152,7 @@ def get_owned_badges(
         sql: SQL,
         private_key: str,
         address: str,
-        proxy: str = 'socks5://aqvja29v66:o7kd9j4gio@premium2.travchisproxies.com:51204'
+        proxy: str
 ):
     old_owned_badges = sql.get_owned_badges(id=id)
     if old_owned_badges:

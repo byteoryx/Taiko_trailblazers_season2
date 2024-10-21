@@ -4,16 +4,16 @@ from datetime import datetime
 from loguru import logger
 from web3 import Web3
 
+from data.constants import taiko_usdc_contract, usdc_token, eth_token
 from datatypes.account import DayBridgeItem
-from datatypes.crypto import eth_token, Balance, usdc_token
+from datatypes.crypto import Balance
 from modules.ritsu import ritsu_eth_swap
 from sdk.sql import SQL
-from settings.chains import taiko_chain
-from settings.config import sleep_between_txs_in_sec
-from settings.constants import taiko_usdc_contract
 from tools.coingecko import get_asset_price
 from tools.crypto import get_balance, get_balance_of, meridian_approve_tx, meridian_deposit_tx
 from tools.other_utils import sleep_in_range
+from user_data.chains import taiko_chain
+from user_data.config import sleep_between_txs_in_sec
 
 
 def kiloex_main(
@@ -87,7 +87,7 @@ def kiloex_main(
                 new_costs = old_balance.float - new_balance.float
 
                 volume, txs, costs = sql.get_volume_and_txs_by_id(day=day, acc_id=index)
-                status = sql.add_bridge_day_report(
+                status = sql.add_day_report(
                     day_item=DayBridgeItem(
                         id=index,
                         txs=txs,
