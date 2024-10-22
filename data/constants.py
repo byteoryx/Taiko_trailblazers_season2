@@ -53,6 +53,7 @@ brigade_checkin_contract = "0x20F50518188FB3c9F5adff472E056291C4B98ecE"
 brigade_claim_item_contract = "0x72dCB9a28bB8EA172B58130d9fd17A6dBE7A9E41"
 crack_x_stack_contract = "0x009C32F03d6eEa4F6DA9DD3f8EC7Dc85824Ae0e6"
 zypher2048_contract = "0xd4629d312CdC663D062F3Fbc322534A9Df0151bC"
+oxastra_contract = "0x90CE48ED68C6FCAe6F13b445F1573f003cF1804d"
 week_badge_contract = "0xa20a8856e00F5ad024a55A663F06DCc419FFc4d5"
 meridian_deposited_usdc = "0xa3f248A1779364FB8B6b59304395229ea8241229"
 

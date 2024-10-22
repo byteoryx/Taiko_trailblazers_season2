@@ -25,7 +25,10 @@ from tools.task import (
     wrap_task,
     burner_transfer_task,
     crack_x_stack_task,
-    zypher2048_task, taikodrips_task
+    zypher2048_task,
+    taikodrips_task,
+    oxastra_task,
+    contract_task
 )
 from user_data.config import (
     shuffle_accounts,
@@ -43,7 +46,10 @@ from user_data.config import (
     minimum_taiko_balance,
     burner_transfer_range,
     crack_x_stack_range,
-    zypher2048_range, taikodrips_stake
+    zypher2048_range,
+    taikodrips_stake,
+    oxastra_boost,
+    contract_deploy_range
 )
 
 
@@ -62,7 +68,10 @@ def main_single_executor(acc: AccountItem, sql: SQL, today_table_name: str):
          "log_suffix": 'brigade nft'},
         {"task_func": crack_x_stack_task, "task_range": crack_x_stack_range, "log_suffix": 'crack-&-stack'},
         {"task_func": zypher2048_task, "task_range": zypher2048_range, "log_suffix": 'zypher2048'},
-        {"task_func": taikodrips_task, "task_range": (1, 1) if taikodrips_stake else (0, 0), "log_suffix": 'taikodrips'}
+        {"task_func": taikodrips_task, "task_range": (1, 1) if taikodrips_stake else (0, 0),
+         "log_suffix": 'taikodrips'},
+        {"task_func": oxastra_task, "task_range": (1, 1) if oxastra_boost else (0, 0), "log_suffix": '0xAstra'},
+        {"task_func": contract_task, "task_range": contract_deploy_range, "log_suffix": 'contract deploy'},
     ]
 
     random.shuffle(tasks)

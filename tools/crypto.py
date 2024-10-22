@@ -9,8 +9,9 @@ from eth_utils import to_bytes
 from loguru import logger
 from web3 import Web3
 from web3.exceptions import TimeExhausted
+from web3.middleware import geth_poa_middleware
 
-from data.abi import ritsu_abi, taikodrips_abi, brigade_spin_abi, brigade_checkin_abi
+from data.abi import ritsu_abi, taikodrips_abi, brigade_spin_abi, brigade_checkin_abi, oxastra_abi
 from data.constants import (
     orbiter_contract,
     taiko_weth_contract,
@@ -36,7 +37,7 @@ from data.constants import (
     meridian_deposit_contract,
     kiloex_deposit_contract,
     taiko_usdc_stg_contract, taikodrips_contract, brigade_spin_contract, brigade_capsule_contract,
-    brigade_starship_contract, brigade_checkin_contract, brigade_claim_item_contract
+    brigade_starship_contract, brigade_checkin_contract, brigade_claim_item_contract, oxastra_contract
 )
 from datatypes.account import AccountItem
 from datatypes.crypto import Balance, Token
@@ -166,6 +167,7 @@ def orbiter_bridge_tx(
         amount_to_bridge: float
 ):
     w3 = Web3(Web3.HTTPProvider(source_chain.rpc))
+    w3.middleware_onion.inject(geth_poa_middleware, layer=0)
     orbiter_recipient = w3.to_checksum_address(orbiter_contract)
 
     account = w3.eth.account.from_key(private_key)
@@ -187,8 +189,8 @@ def orbiter_bridge_tx(
         "value": Web3.to_wei(amount_to_bridge, 'ether') + recipient_chain.orbiter_code,
         "data": "0x",
         "gas": gas_limit,
-        "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-        "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+        "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+        "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
         "nonce": nonce
     }
 
@@ -202,6 +204,7 @@ def xy_bridge_tx(
         amount_to_bridge: float
 ):
     w3 = Web3(Web3.HTTPProvider(source_chain.rpc))
+    w3.middleware_onion.inject(geth_poa_middleware, layer=0)
     recipient = w3.to_checksum_address(xy_contracts[source_chain.name])
 
     account = w3.eth.account.from_key(private_key)
@@ -230,7 +233,7 @@ def xy_bridge_tx(
     gas_limit = int(w3.eth.estimate_gas({
         'from': account.address,
         'to': recipient,
-        'value': Web3.to_wei(amount_to_bridge, 'ether'),
+        'value': int(Web3.to_wei(amount_to_bridge, 'ether')),
         'data': data
     }) * gas_multiplier)
 
@@ -238,11 +241,11 @@ def xy_bridge_tx(
         "chainId": source_chain.id,
         "from": account.address,
         "to": recipient,
-        "value": Web3.to_wei(amount_to_bridge, 'ether'),
+        "value": int(Web3.to_wei(amount_to_bridge, 'ether')),
         "data": data,
         "gas": gas_limit,
-        "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-        "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+        "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+        "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
         "nonce": nonce
     }
 
@@ -272,8 +275,8 @@ def wrap_tx(private_key: str, amount_to_wrap: float):
         "value": Web3.to_wei(amount_to_wrap, 'ether'),
         "data": "0xd0e30db0",
         "gas": gas_limit,
-        "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-        "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+        "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+        "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
         "nonce": nonce
     }
 
@@ -307,8 +310,8 @@ def unwrap_tx(private_key: str, amount_to_unwrap: Balance):
         "value": 0,
         "data": data,
         "gas": gas_limit,
-        "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-        "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+        "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+        "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
         "nonce": nonce
     }
 
@@ -338,8 +341,8 @@ def conft_tx(private_key: str):
         "value": int(conft_mint_price * 10 ** 18),
         "data": '0x1249c58b',
         "gas": gas_limit,
-        "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-        "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+        "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+        "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
         "nonce": nonce
     }
 
@@ -369,8 +372,8 @@ def omnihub_tx(private_key: str):
         "value": "0x5f7f37b39000",
         "data": '0xa0712d680000000000000000000000000000000000000000000000000000000000000001',
         "gas": gas_limit,
-        "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-        "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+        "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+        "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
         "nonce": nonce
     }
 
@@ -400,8 +403,8 @@ def rubyscore_vote_tx(private_key: str):
         "value": 0,
         "data": '0x632a9a52',
         "gas": gas_limit,
-        "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-        "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+        "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+        "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
         "nonce": nonce
     }
 
@@ -410,6 +413,7 @@ def rubyscore_vote_tx(private_key: str):
 
 def transfer_tx(private_key: str, amount_to_send: float, chain: ChainItem = taiko_chain, address: str = ''):
     w3 = Web3(Web3.HTTPProvider(chain.rpc))
+    w3.middleware_onion.inject(geth_poa_middleware, layer=0)
     account = w3.eth.account.from_key(private_key)
 
     if address:
@@ -433,8 +437,8 @@ def transfer_tx(private_key: str, amount_to_send: float, chain: ChainItem = taik
         "to": recipient,
         "value": int(amount_to_send * 10 ** 18),
         "gas": gas_limit,
-        "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-        "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+        "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+        "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
         "nonce": nonce
     }
 
@@ -464,8 +468,8 @@ def rhino_tx(private_key: str, contract: str):
         "value": int(rhino_gm_price * 10 ** 18),
         "data": '0xc0129d43',
         "gas": gas_limit,
-        "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-        "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+        "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+        "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
         "nonce": nonce
     }
 
@@ -509,8 +513,8 @@ def hana_supply_tx(private_key: str, supply_amount: float):
         "value": int(supply_amount * 10 ** 18),
         "data": data,
         "gas": gas_limit,
-        "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-        "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+        "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+        "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
         "nonce": nonce
     }
 
@@ -550,8 +554,8 @@ def hana_withdraw_tx(private_key: str, withdraw_amount: int):
             "value": 0,
             "data": data,
             "gas": gas_limit,
-            "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-            "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+            "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+            "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
             "nonce": nonce
         }
 
@@ -596,8 +600,8 @@ def hana_approve_tx(token: Token, approve_amount: int, private_key: str):
         "value": 0,
         "data": data,
         "gas": gas_limit,
-        "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-        "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+        "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+        "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
         "nonce": nonce
     }
 
@@ -633,8 +637,8 @@ def ritsu_approve_tx(token: Token, approve_amount: int, private_key: str):
         "value": 0,
         "data": data,
         "gas": gas_limit,
-        "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-        "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+        "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+        "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
         "nonce": nonce
     }
 
@@ -670,8 +674,8 @@ def meridian_approve_tx(token: Token, approve_amount: int, private_key: str):
         "value": 0,
         "data": data,
         "gas": gas_limit,
-        "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-        "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+        "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+        "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
         "nonce": nonce
     }
 
@@ -707,8 +711,8 @@ def kiloex_approve_tx(token: Token, approve_amount: int, private_key: str):
         "value": 0,
         "data": data,
         "gas": gas_limit,
-        "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-        "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+        "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+        "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
         "nonce": nonce
     }
 
@@ -753,8 +757,8 @@ def hana_repay_tx(private_key: str, repay_amount: int, repay_token: Token):
         "value": value,
         "data": data,
         "gas": gas_limit,
-        "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-        "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+        "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+        "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
         "nonce": nonce
     }
 
@@ -801,8 +805,8 @@ def hana_borrow_tx(private_key: str, borrow_amount: int, borrow_token: Token):
         "value": 0,
         "data": data,
         "gas": gas_limit,
-        "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-        "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+        "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+        "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
         "nonce": nonce
     }
 
@@ -916,8 +920,8 @@ def ritsu_swap_tx(
         'value': amount_in,
         'from': account.address,
         'chainId': taiko_chain.id,
-        "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-        "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+        "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+        "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
         "nonce": nonce
     })
 
@@ -949,8 +953,8 @@ def brigade_harvest_tx(private_key: str):
             "to": recipient,
             "data": '0x4641257d',
             "gas": gas_limit,
-            "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-            "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+            "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+            "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
             "nonce": nonce
         }
 
@@ -980,8 +984,8 @@ def brigade_spin_tx(
         transaction = brigade_contract.functions.spinWheel().build_transaction({
             'from': account.address,
             'chainId': taiko_chain.id,
-            "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-            "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+            "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+            "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
             "nonce": nonce
         })
 
@@ -1020,8 +1024,8 @@ def brigade_capsule_tx(private_key: str):
             "to": recipient,
             "data": data,
             "gas": gas_limit,
-            "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-            "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+            "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+            "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
             "nonce": nonce
         }
 
@@ -1057,8 +1061,8 @@ def brigade_starship_tx(private_key: str):
             "to": recipient,
             "data": data,
             "gas": gas_limit,
-            "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-            "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+            "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+            "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
             "nonce": nonce
         }
 
@@ -1088,8 +1092,8 @@ def brigade_checkin_tx(
         transaction = brigade_contract.functions.checkin().build_transaction({
             'from': account.address,
             'chainId': taiko_chain.id,
-            "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-            "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+            "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+            "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
             "nonce": nonce
         })
 
@@ -1131,8 +1135,8 @@ def brigade_claim_item_tx(
             "to": recipient,
             "data": data,
             "gas": gas_limit,
-            "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-            "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+            "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+            "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
             "nonce": nonce
         }
 
@@ -1142,6 +1146,70 @@ def brigade_claim_item_tx(
             return "max claims reached for this product"
         else:
             logger.exception(f"{account.address} | {e}")
+
+
+def oxastra_boost_tx(
+        private_key: str
+):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    brigade_contract = w3.eth.contract(
+        address=w3.to_checksum_address(oxastra_contract),
+        abi=oxastra_abi
+    )
+
+    try:
+        transaction = brigade_contract.functions.boost().build_transaction({
+            'from': account.address,
+            'chainId': taiko_chain.id,
+            "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+            "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
+            "nonce": nonce
+        })
+
+        gas_limit = int(w3.eth.estimate_gas(transaction=transaction) * gas_multiplier)
+        transaction['gas'] = gas_limit
+
+        return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+    except Exception as e:
+        if "AstraGameBoost available only once every 24 hours" in str(e):
+            return "AstraGameBoost available only once every 24 hours"
+        else:
+            logger.exception(f"{account.address} | {e}")
+
+
+def contract_deploy_tx(
+        private_key: str,
+        abi: [],
+        bytecode: str
+):
+    w3 = Web3(Web3.HTTPProvider(taiko_chain.rpc))
+    account = w3.eth.account.from_key(private_key)
+    nonce = w3.eth.get_transaction_count(account.address)
+
+    max_priority_fee_per_gas, max_fee_per_gas = get_gas(w3=w3)
+
+    contract = w3.eth.contract(abi=abi, bytecode=bytecode)
+
+    try:
+        transaction = contract.constructor().build_transaction({
+            'from': account.address,
+            'chainId': taiko_chain.id,
+            "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+            "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
+            "nonce": nonce
+        })
+
+        gas_limit = int(w3.eth.estimate_gas(transaction=transaction) * gas_multiplier)
+        transaction['gas'] = gas_limit
+
+        return sign_and_wait(w3=w3, transaction=transaction, private_key=private_key)
+    except Exception as e:
+        logger.exception(f"{account.address} | {e}")
 
 
 def crack_x_stack_tx(private_key: str):
@@ -1166,8 +1234,8 @@ def crack_x_stack_tx(private_key: str):
             "to": recipient,
             "data": '0x97e01a46',
             "gas": gas_limit,
-            "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-            "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+            "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+            "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
             "nonce": nonce
         }
 
@@ -1208,8 +1276,8 @@ def zypher2048_tx(private_key: str):
             "data": data,
             'value': int(0.00025 * 10 ** 18),
             "gas": gas_limit,
-            "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-            "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+            "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+            "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
             "nonce": nonce
         }
 
@@ -1258,8 +1326,8 @@ def week7_tx(private_key: str, message: str):
             "to": recipient,
             "data": data,
             "gas": gas_limit,
-            "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-            "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+            "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+            "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
             "nonce": nonce
         }
 
@@ -1299,8 +1367,8 @@ def week8_tx(private_key: str, message: str, badge_id: int):
             "to": recipient,
             "data": data,
             "gas": gas_limit,
-            "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-            "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+            "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+            "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
             "nonce": nonce
         }
 
@@ -1340,8 +1408,8 @@ def meridian_deposit_tx(private_key: str, deposit_int: int):
             "data": data,
             'value': 0,
             "gas": gas_limit,
-            "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-            "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+            "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+            "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
             "nonce": nonce
         }
 
@@ -1378,8 +1446,8 @@ def meridian_withdraw_tx(private_key: str, withdraw_int: int):
             "data": data,
             'value': 0,
             "gas": gas_limit,
-            "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-            "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+            "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+            "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
             "nonce": nonce
         }
 
@@ -1417,8 +1485,8 @@ def taikodrips_approve_tx(token: Token, approve_amount: int, private_key: str):
         "value": 0,
         "data": data,
         "gas": gas_limit,
-        "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-        "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+        "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+        "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
         "nonce": nonce
     }
 
@@ -1452,8 +1520,8 @@ def taikodrips_stake_tx(private_key: str, amount_to_stake: int, lock_duration: i
             "data": data,
             'value': 0,
             "gas": gas_limit,
-            "maxFeePerGas": max_fee_per_gas * gas_multiplier,
-            "maxPriorityFeePerGas": max_priority_fee_per_gas * gas_multiplier,
+            "maxFeePerGas": int(max_fee_per_gas * gas_multiplier),
+            "maxPriorityFeePerGas": int(max_priority_fee_per_gas * gas_multiplier),
             "nonce": nonce
         }
 

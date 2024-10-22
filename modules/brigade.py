@@ -27,7 +27,7 @@ def brigade_harvest(
         tx_hash = brigade_harvest_tx(
             private_key=private_key,
         )
-        if "you can't harvest yet" in tx_hash:
+        if tx_hash and "you can't harvest yet" in tx_hash:
             logger.info(f"#{index} | {account.address}: brigade_harvest | you can't harvest yet.")
         elif tx_hash:
             new_balance = get_balance(address=account.address, rpc=taiko_chain.rpc)
@@ -71,7 +71,7 @@ def brigade_spin(
         tx_hash = brigade_spin_tx(
             private_key=private_key,
         )
-        if "you can't spin yet" in tx_hash:
+        if tx_hash and "you can't spin yet" in tx_hash:
             logger.info(f"#{index} | {account.address}: brigade_spin | you can't spin yet.")
         elif tx_hash:
             new_balance = get_balance(address=account.address, rpc=taiko_chain.rpc)
@@ -113,7 +113,7 @@ def brigade_capsule(
         tx_hash = brigade_capsule_tx(
             private_key=private_key,
         )
-        if "you can't pick a capsule yet" in tx_hash:
+        if tx_hash and "you can't pick a capsule yet" in tx_hash:
             logger.info(f"#{index} | {account.address}: brigade_spin | you can't pick a capsule yet.")
         elif tx_hash:
             new_balance = get_balance(address=account.address, rpc=taiko_chain.rpc)
@@ -156,7 +156,7 @@ def brigade_starship(
         tx_hash = brigade_starship_tx(
             private_key=private_key,
         )
-        if "you can't start yet" in tx_hash:
+        if tx_hash and "you can't start yet" in tx_hash:
             logger.info(f"#{index} | {account.address}: brigade_starship | you can't start yet.")
         elif tx_hash:
             new_balance = get_balance(address=account.address, rpc=taiko_chain.rpc)
@@ -200,7 +200,7 @@ def brigade_checkin(
         tx_hash = brigade_checkin_tx(
             private_key=private_key,
         )
-        if "you can't claim yet" in tx_hash:
+        if tx_hash and "you can't claim yet" in tx_hash:
             logger.info(f"#{index} | {account.address}: brigade_checkin | you can't claim start yet.")
         elif tx_hash:
             new_balance = get_balance(address=account.address, rpc=taiko_chain.rpc)
@@ -245,7 +245,7 @@ def brigade_claim_item(
             private_key=private_key,
             item_index=item_index
         )
-        if "max claims reached for this product" in tx_hash:
+        if tx_hash and "max claims reached for this product" in tx_hash:
             logger.info(f"#{index} | {account.address}: brigade_claim_item{item_index} | already claimed.")
         elif tx_hash:
             new_balance = get_balance(address=account.address, rpc=taiko_chain.rpc)
