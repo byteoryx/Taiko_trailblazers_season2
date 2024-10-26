@@ -3,14 +3,12 @@ import random
 from datatypes.account import AccountItem
 from modules.brigade import brigade_main
 from modules.conft import conft_mint
-from modules.contract import contract_deploy
 from modules.crack_x_stack import crack_x_stack_main
 from modules.hana import hana_main
 from modules.kiloex import kiloex_main
 from modules.meridians import meridian_main, meridian_withdraw_main
 from modules.omnihub import omnihub_mint
 from modules.orbiter import orbiter_bridge
-from modules.oxastra import oxastra_checkin
 from modules.rhino_gm import rhino_gm
 from modules.rubyscore import rubyscore_vote
 from modules.taikodrips import taikodrips_main
@@ -97,26 +95,12 @@ def rhino_task(sql: SQL, acc: AccountItem, today: str):
 
 
 def hana_task(sql: SQL, acc: AccountItem, today: str):
-    hana_main(
-        index=acc.id,
-        tier=acc.tier,
-        private_key=acc.private_key,
-        sql=sql,
-        day=today,
-        multiplier_range=(0.91, 0.95)
-    )
+    hana_main(index=acc.id, private_key=acc.private_key, sql=sql, day=today, multiplier_range=(0.91, 0.95))
 
 
 def hana_withdraw_task(sql: SQL, acc: AccountItem, today: str):
-    hana_main(
-        index=acc.id,
-        tier=acc.tier,
-        private_key=acc.private_key,
-        sql=sql,
-        day=today,
-        multiplier_range=(0.91, 0.95),
-        only_withdraw=True
-    )
+    hana_main(index=acc.id, private_key=acc.private_key, sql=sql, day=today, multiplier_range=(0.91, 0.95),
+              only_withdraw=True)
 
 
 def self_transfer_task(sql: SQL, acc: AccountItem, today: str):
@@ -163,11 +147,3 @@ def zypher2048_task(sql: SQL, acc: AccountItem, today: str):
 
 def taikodrips_task(sql: SQL, acc: AccountItem, today: str):
     taikodrips_main(account=acc, sql=sql, day=today)
-
-
-def oxastra_task(sql: SQL, acc: AccountItem, today: str):
-    oxastra_checkin(index=acc.id, private_key=acc.private_key, sql=sql, day=today)
-
-
-def contract_task(sql: SQL, acc: AccountItem, today: str):
-    contract_deploy(index=acc.id, private_key=acc.private_key, sql=sql, day=today)

@@ -25,9 +25,7 @@ burner_transfer_range = (0, 0)  # количество трансферов на
 brigade_game = False  # несколько уникальных около-бесплатных взаимодействий с brigadegame.io, затраты $0.01
 crack_x_stack_range = (0, 0)  # клейм бесплатных игр в crackandstack.com, затраты $0.01
 zypher2048_range = (0, 0)  # старт игры в zypher.game/2048, затраты $0.7
-oxastra_boost = False  # ежедневный чекин в 0xastra.xyz, затраты $0.01
-contract_deploy_range = (0, 0)  # создание пустого контракта, затраты $0.1
 
 # taikodrips
-taikodrips_stake = False  # включить или отключить модуль стейка на taikodrips.xyz
+taikodrips_stake = True  # включить или отключить модуль стейка на taikodrips.xyz
 taikodrips_lock_in_days_range = [60, 91]  # доступные варианты: 60, 91, 182, 365

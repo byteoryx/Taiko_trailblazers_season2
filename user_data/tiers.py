@@ -10,7 +10,7 @@ class TierItem(BaseModel):
 
     # если баланс $TAIKO меньше необходимого, скрипт постарается докупить недостающие токены на ritsu.xyz.
     # минимальный допустимый депозит - 0.01 $TAIKO.
-    taikodrips_stake_amount_range: tuple[float, float] | str  # in $TAIKO or 'MAX'
+    taikodrips_stake_amount_range: tuple[float, float]  # in $TAIKO
 
 
 class TierCollection(BaseModel):
@@ -26,7 +26,7 @@ tier_collection = TierCollection(
         daily_txs_limit=500,
         leave_balance_on_taiko_chain=0.011,
         leave_balance_on_source_chains=0.0011,
-        taikodrips_stake_amount_range=(10, 11)  # (x, y) | 'MAX'
+        taikodrips_stake_amount_range=(10, 11)
     ),
     B=TierItem(
         leaderboard_top_limit=5,
@@ -34,7 +34,7 @@ tier_collection = TierCollection(
         daily_txs_limit=250,
         leave_balance_on_taiko_chain=0.0051,
         leave_balance_on_source_chains=0.0011,
-        taikodrips_stake_amount_range=(1, 2)  # (x, y) | 'MAX'
+        taikodrips_stake_amount_range=(1, 2)
     ),
     C=TierItem(
         leaderboard_top_limit=25,
@@ -42,6 +42,6 @@ tier_collection = TierCollection(
         daily_txs_limit=100,
         leave_balance_on_taiko_chain=0.0011,
         leave_balance_on_source_chains=0.0011,
-        taikodrips_stake_amount_range=(0.02, 0.03)  # (x, y) | 'MAX'
+        taikodrips_stake_amount_range=(0.02, 0.03)
     )
 )
