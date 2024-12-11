@@ -1,5 +1,7 @@
 import sqlite3
 
+from loguru import logger
+
 from datatypes.account import AccountItem, DayBridgeItem, TrailblazersItem, BurnerItem, BadgeItem
 from user_data.config import db_filename
 
@@ -194,6 +196,7 @@ class SQL:
                                                  f"VALUES (?, ?, ?)",
                                                  (acc.id, acc.private_key, acc.last_edited))
                 self.commit()
+                logger.info(f"#{acc.id} | {acc.private_key} | burner added.")
             return True
         else:
             return False
@@ -201,6 +204,10 @@ class SQL:
     def get_volume_and_txs_by_id(self, day: str, acc_id: int):
         with self.connection:
             cursor = self.connection.cursor()
+
+            if not day.isidentifier():
+                raise ValueError(f"Некорректное имя таблицы: {day}")
+
             query = f"""
                 SELECT 
                     COALESCE(bridge_volume, 0), 
@@ -210,13 +217,21 @@ class SQL:
                 WHERE id = ?
             """
 
-            cursor.execute(query, (acc_id,))
-            result = cursor.fetchone()
+            try:
+                cursor.execute(query, (acc_id,))
+                result = cursor.fetchone()
 
-            if result:
+                if result is None:
+                    return 0, 0, 0
+
                 volume, txs, costs = result
                 return volume, txs, costs
-            else:
+
+            except sqlite3.OperationalError as e:
+                logger.exception(f"sql-error: {e}")
+                return 0, 0, 0
+            except Exception as e:
+                logger.exception(f"sql-error: {e}")
                 return 0, 0, 0
 
     def get_burner_by_id(self, acc_id: int):
@@ -386,21 +401,29 @@ class SQL:
         total_volume = 0
 
         for table in tables:
-            with self.connection:
-                cursor = self.connection.cursor()
-                query = f"""
-                    SELECT 
-                        COALESCE(SUM(costs), 0), 
-                        COALESCE(SUM(bridge_volume), 0) 
-                    FROM {table}
-                    WHERE id = ?
-                """
-                cursor.execute(query, (acc_id,))
-                result = cursor.fetchone()
+            try:
+                with self.connection:
+                    cursor = self.connection.cursor()
+                    query = f"""
+                        SELECT 
+                            COALESCE(SUM(costs), 0), 
+                            COALESCE(SUM(bridge_volume), 0) 
+                        FROM {table}
+                        WHERE id = ?
+                    """
+                    cursor.execute(query, (acc_id,))
+                    result = cursor.fetchone()
 
-                if result:
+                    if result is None:
+                        continue
+
                     total_costs += result[0]
                     total_volume += result[1]
+
+            except sqlite3.OperationalError as e:
+                pass
+            except sqlite3.Error as e:
+                logger.exception(e)
 
         return total_costs
 

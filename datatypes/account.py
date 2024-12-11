@@ -2,15 +2,18 @@ from typing import Optional
 
 from pydantic import BaseModel
 
+from user_data.tiers import TierItem
+
 
 class AccountItem(BaseModel):
     id: Optional[int]
     private_key: str
     address: Optional[str]
-    cex_address: str
-    proxy: str
+    cex_address: Optional[str]
+    proxy: Optional[str]
     owner: str
     tier: str
+    config: Optional[TierItem]
     last_edited: str
 
 

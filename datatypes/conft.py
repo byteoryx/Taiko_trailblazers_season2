@@ -31,7 +31,6 @@ class Nft(BaseModel):
     contractAddress: str
     tokenId: str
     name: str
-    thumb: Optional[HttpUrl]
     rank: int
     collectionName: Optional[str]
     collectionSlug: Optional[str]

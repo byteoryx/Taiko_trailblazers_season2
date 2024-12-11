@@ -11,7 +11,7 @@ from modules.week import week_main
 from sdk.sql import SQL
 from tools.other_utils import sleep_in_range, get_today_table_name
 from tools.sql import sql_get_accs, sql_get_not_minted_badge
-from tools.task import brigade_nft_task, crack_x_stack_task, meridian_task, meridian_withdraw_task
+from tools.task import brigade_nft_task, crack_x_stack_task, meridian_usdc_task, meridian_usdc_withdraw_task
 from user_data.config import shuffle_accounts, workers_range
 from user_data.config import sleep_between_txs_in_sec
 
@@ -29,7 +29,7 @@ def main_week8_single_executor(acc: AccountItem, sql: SQL, today_bridge: str):
     if result:
         if 'not whitelisted' in result:
             tasks = [
-                {"task_func": meridian_task, "task_range": (1, 1), "log_suffix": 'meridian'}
+                {"task_func": meridian_usdc_task, "task_range": (1, 1), "log_suffix": 'meridian'}
             ]
 
             random.shuffle(tasks)
@@ -38,7 +38,7 @@ def main_week8_single_executor(acc: AccountItem, sql: SQL, today_bridge: str):
                 if task["task_range"] != (0, 0):
                     execute_task(
                         sql, acc, task["task_func"], task["task_range"],
-                        today_bridge, task["log_suffix"], True, True
+                        today_bridge, True, False
                     )
 
             sleep_in_range(sec_from=60 + sleep_between_txs_in_sec[0], sec_to=60 + sleep_between_txs_in_sec[1])
@@ -51,7 +51,7 @@ def main_week8_single_executor(acc: AccountItem, sql: SQL, today_bridge: str):
                 proxy=acc.proxy
             )
 
-    execute_task(sql, acc, meridian_withdraw_task, (1, 1), today_bridge, 'meridian-withdraw')
+    execute_task(sql, acc, meridian_usdc_withdraw_task, (1, 1), today_bridge)
     logger.info(f'#{acc.id} | {acc.address}: week8 finish.')
 
 
@@ -78,7 +78,7 @@ def main_week7_single_executor(acc: AccountItem, sql: SQL, today_bridge: str):
                 if task["task_range"] != (0, 0):
                     execute_task(
                         sql, acc, task["task_func"], task["task_range"],
-                        today_bridge, task["log_suffix"], True, False
+                        today_bridge, True, False
                     )
 
             sleep_in_range(sec_from=60 + sleep_between_txs_in_sec[0], sec_to=60 + sleep_between_txs_in_sec[1])
@@ -93,7 +93,7 @@ def main_week7_single_executor(acc: AccountItem, sql: SQL, today_bridge: str):
     logger.info(f'#{acc.id} | {acc.address}: week7 finish.')
 
 
-def taiko_week8_main_executor(sql: SQL, accs: [AccountItem], today_bridge: str, today: str, total_accs_len: int):
+def taiko_week8_main_executor(sql: SQL, accs: [AccountItem], today_bridge: str, total_accs_len: int):
     if accs:
         logger.info(f'{len(accs)}/{total_accs_len} to be used for week8.')
 
@@ -112,7 +112,7 @@ def taiko_week8_main_executor(sql: SQL, accs: [AccountItem], today_bridge: str, 
         logger.success(f'every acc is processed with week8.')
 
 
-def taiko_week7_main_executor(sql: SQL, accs: [AccountItem], today_bridge: str, today: str, total_accs_len: int):
+def taiko_week7_main_executor(sql: SQL, accs: [AccountItem], today_bridge: str, total_accs_len: int):
     if accs:
         logger.info(f'{len(accs)}/{total_accs_len} to be used for week7.')
 
@@ -145,10 +145,18 @@ def main_week_executor(sql: SQL, badge_id: int):
             random.shuffle(accs)
 
         if badge_id == 7:
-            taiko_week7_main_executor(sql=sql, accs=accs, today_bridge=today_bridge,
-                                      today=today, total_accs_len=len(total_accs))
+            taiko_week7_main_executor(
+                sql=sql,
+                accs=accs,
+                today_bridge=today_bridge,
+                total_accs_len=len(total_accs)
+            )
         if badge_id == 8:
-            taiko_week8_main_executor(sql=sql, accs=accs, today_bridge=today_bridge,
-                                      today=today, total_accs_len=len(total_accs))
+            taiko_week8_main_executor(
+                sql=sql,
+                accs=accs,
+                today_bridge=today_bridge,
+                total_accs_len=len(total_accs)
+            )
     else:
         logger.success(f'every acc is processed with week{badge_id}_task.')

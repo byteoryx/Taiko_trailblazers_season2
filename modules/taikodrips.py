@@ -15,9 +15,9 @@ from tools.crypto import (
     get_allowance,
     get_taikodrips_lockups, taikodrips_approve_tx, taikodrips_stake_tx, get_balance, get_balance_of
 )
-from tools.other_utils import sleep_in_range, get_stake_limits, get_leave_on_source
+from tools.other_utils import sleep_in_range
 from user_data.chains import taiko_chain
-from user_data.config import sleep_between_txs_in_sec, taikodrips_lock_in_days_range
+from user_data.config import sleep_between_txs_in_sec
 
 
 def taikodrips_stake(sql: SQL, day: str, account: AccountItem, stake_limits: [float, float]):
@@ -25,7 +25,9 @@ def taikodrips_stake(sql: SQL, day: str, account: AccountItem, stake_limits: [fl
 
     total_stake = get_taikodrips_total_staked(private_key=account.private_key)
     taiko_balance = get_balance_of(address=account.address, contract=taiko_token.address)
-    if stake_limits[0] <= taiko_balance.float <= stake_limits[1]:
+
+    if (isinstance(stake_limits, str) and stake_limits == 'MAX') \
+            or (stake_limits[0] <= taiko_balance.float <= stake_limits[1]):
         amount_to_stake = Balance(
             float=taiko_balance.float,
             int=taiko_balance.int
@@ -60,7 +62,7 @@ def taikodrips_stake(sql: SQL, day: str, account: AccountItem, stake_limits: [fl
             int=int(amount_to_spend_float * eth_token.denomination)
         )
 
-        leave_on_source = get_leave_on_source(tier=account.tier, chain=taiko_chain)
+        leave_on_source = account.config.common.leave_balance_on_taiko_chain
         if old_eth_balance.float > amount_to_spend.float + leave_on_source:
             ritsu_token_swap(
                 index=account.id,
@@ -86,63 +88,65 @@ def taikodrips_stake(sql: SQL, day: str, account: AccountItem, stake_limits: [fl
             )
             return
 
-    logger.info(f"#{account.id} | {account.address}: {amount_to_stake.float} $TAIKO to be staked on taikodrips.")
-
-    allowance = get_allowance(
-        private_key=account.private_key,
-        token=taiko_token,
-        spender_address=taikodrips_contract
-    )
-    if allowance.int < amount_to_stake.int:
-        approve_amount = int(amount_to_stake.int - allowance.int)
-        approve_hash = taikodrips_approve_tx(
+    if amount_to_stake.int:
+        logger.info(f"#{account.id} | {account.address}: {amount_to_stake.float} $TAIKO to be staked on taikodrips.")
+        allowance = get_allowance(
+            private_key=account.private_key,
             token=taiko_token,
-            approve_amount=approve_amount,
-            private_key=account.private_key
+            spender_address=taikodrips_contract
         )
-        if approve_hash:
+        if allowance.int < amount_to_stake.int:
+            approve_amount = amount_to_stake.int
+            approve_hash = taikodrips_approve_tx(
+                token=taiko_token,
+                approve_amount=approve_amount,
+                private_key=account.private_key
+            )
+            if approve_hash:
+                logger.info(
+                    f'#{account.id} | {account.address}: approve to spend '
+                    f'{round(approve_amount / taiko_token.denomination, 2)} $TAIKO | '
+                    f'{taiko_chain.explorer}/{approve_hash}'
+                )
+                sleep_in_range(sec_from=60 + sleep_between_txs_in_sec[0], sec_to=60 + sleep_between_txs_in_sec[1])
+            else:
+                logger.error(
+                    f'#{account.id} | {account.address}: approve to spend '
+                    f'{amount_to_stake.float} $TAIKO tx has failed.'
+                )
+
+        tx_hash = taikodrips_stake_tx(
+            private_key=account.private_key,
+            amount_to_stake=amount_to_stake.int,
+            lock_duration=random.choice(account.config.modules.taikodrips_lock_in_days_range)
+        )
+        if tx_hash:
+            total_stake = get_taikodrips_total_staked(private_key=account.private_key)
+            new_balance = get_balance(address=account.address, rpc=taiko_chain.rpc)
+            new_costs = old_eth_balance.float - new_balance.float
+
+            volume, txs, costs = sql.get_volume_and_txs_by_id(day=day, acc_id=account.id)
+            status = sql.add_day_report(
+                day_item=DayBridgeItem(
+                    id=account.id,
+                    txs=txs,
+                    volume=volume,
+                    costs=costs + new_costs,
+                    last_edited=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                ),
+                day=day,
+                acc_id=account.id
+            )
             logger.info(
-                f'#{account.id} | {account.address}: approve to spend '
-                f'{round(approve_amount / taiko_token.denomination, 2)} $TAIKO | '
-                f'{taiko_chain.explorer}/{approve_hash}'
+                f'#{account.id} | {account.address}: '
+                f'{total_stake} $TAIKO staked on taikodrips | '
+                f'{taiko_chain.explorer}/{tx_hash} | {status}.'
             )
             sleep_in_range(sec_from=60 + sleep_between_txs_in_sec[0], sec_to=60 + sleep_between_txs_in_sec[1])
         else:
-            logger.error(
-                f'#{account.id} | {account.address}: approve to spend '
-                f'{amount_to_stake.float} $TAIKO tx has failed.'
-            )
-
-    tx_hash = taikodrips_stake_tx(
-        private_key=account.private_key,
-        amount_to_stake=amount_to_stake.int,
-        lock_duration=random.choice(taikodrips_lock_in_days_range)
-    )
-    if tx_hash:
-        total_stake = get_taikodrips_total_staked(private_key=account.private_key)
-        new_balance = get_balance(address=account.address, rpc=taiko_chain.rpc)
-        new_costs = old_eth_balance.float - new_balance.float
-
-        volume, txs, costs = sql.get_volume_and_txs_by_id(day=day, acc_id=account.id)
-        status = sql.add_day_report(
-            day_item=DayBridgeItem(
-                id=account.id,
-                txs=txs,
-                volume=volume,
-                costs=costs + new_costs,
-                last_edited=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            ),
-            day=day,
-            acc_id=account.id
-        )
-        logger.info(
-            f'#{account.id} | {account.address}: '
-            f'{total_stake} $TAIKO staked on taikodrips | '
-            f'{taiko_chain.explorer}/{tx_hash} | {status}.'
-        )
-        sleep_in_range(sec_from=60 + sleep_between_txs_in_sec[0], sec_to=60 + sleep_between_txs_in_sec[1])
+            logger.error(f'#{account.id} | {account.address}: taikodrips tx has failed.')
     else:
-        logger.error(f'#{account.id} | {account.address}: taikodrips tx has failed.')
+        logger.warning(f"#{account.id} | {account.address}: nothing to stake, balance is empty.")
 
 
 def get_taikodrips_total_staked(private_key: str):
@@ -169,9 +173,17 @@ def taikodrips_main(
         sql: SQL,
         day: str
 ):
-    stake_limits = get_stake_limits(tier=account.tier)
+    stake_limits = account.config.modules.taikodrips_stake_amount_range
     total_stake = get_taikodrips_total_staked(private_key=account.private_key)
-    if stake_limits[1] > 0:
+
+    if isinstance(stake_limits, str):
+        taikodrips_stake(
+            sql=sql,
+            day=day,
+            account=account,
+            stake_limits=stake_limits
+        )
+    elif stake_limits[1] > 0:
         if total_stake < stake_limits[0]:
             taikodrips_stake(
                 sql=sql,

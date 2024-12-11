@@ -9,11 +9,9 @@ from datatypes.account import AccountItem, BurnerItem, BadgeItem
 from datatypes.crypto import Balance
 from sdk.sql import SQL
 from tools.crypto import get_balance, generate_private_key
-from tools.other_utils import get_leave_on_source
+from tools.other_utils import insert_tier_configs_into_account_items
 from tools.trailblazers import get_total_trailblazer_count
 from user_data.chains import source_chains, taiko_chain
-from user_data.config import minimum_transfer
-from user_data.tiers import tier_collection
 
 
 def sql_get_accs(sql: SQL, owner: str = '') -> List[AccountItem]:
@@ -85,58 +83,52 @@ def sql_get_accounts_with_zero_minted(sql: SQL, day_index: int) -> List[AccountI
     return accs
 
 
-def sql_get_accs_to_work(sql: SQL,
-                         day: str,
-                         shuffle: bool = False,
-                         minimum_required_balance: float = 0
-                         ) -> List[AccountItem]:
-    total_accs = sql_get_accs(sql=sql)
+def sql_get_accs_to_work(
+        sql: SQL,
+        day: str,
+        shuffle: bool
+) -> List[AccountItem]:
+    total_accs = insert_tier_configs_into_account_items(accounts=sql_get_accs(sql=sql))
     total_trailblazers = get_total_trailblazer_count(address=total_accs[0].address)
 
     accs = []
     for acc in total_accs:
-        if acc.tier:
-            balance = get_balance(address=acc.address, rpc=taiko_chain.rpc)
+        balance = get_balance(address=acc.address, rpc=taiko_chain.rpc)
+        minimum_required_balance = acc.config.common.leave_balance_on_taiko_chain
 
-            if minimum_required_balance and balance.float < minimum_required_balance:
-                logger.warning(
-                    f'#{acc.id} | {acc.address} | will not be used because of low balance: '
-                    f'{balance.float} $ETH on taiko, minimum required: {round(minimum_required_balance, 6)} $ETH.'
-                )
-                continue
+        if balance.float < minimum_required_balance * 0.99:
+            logger.warning(
+                f'#{acc.id} | {acc.address} | will not be used because of low balance: '
+                f'{balance.float} $ETH on taiko, minimum required: {round(minimum_required_balance, 6)} $ETH.'
+            )
+            continue
 
-            costs = sql.get_total_costs(acc_id=acc.id)
-            rank = sql.get_rank(acc_id=acc.id)
-            txs = sql.get_today_txs(day=day, acc_id=acc.id)
-            if rank:
-                leaderboard_top = round(rank / total_trailblazers * 100, 2)
-            else:
-                leaderboard_top = 100
-            if acc.tier == 'A':
-                limits = tier_collection.A
-            elif acc.tier == 'B':
-                limits = tier_collection.B
-            else:
-                limits = tier_collection.C
+        costs = sql.get_total_costs(acc_id=acc.id)
+        rank = sql.get_rank(acc_id=acc.id)
+        txs = sql.get_today_txs(day=day, acc_id=acc.id)
+        if rank:
+            leaderboard_top = round(rank / total_trailblazers * 100, 2)
+        else:
+            leaderboard_top = 100
 
-            if costs < limits.total_costs_limit:
-                if txs < limits.daily_txs_limit:
-                    if leaderboard_top > limits.leaderboard_top_limit:
-                        logger.info(f'#{acc.id} | {acc.address} | '
-                                    f'will be used for main_taiko with {balance.float} $ETH on taiko.')
-                        accs.append((acc, balance.float))
-                    else:
-                        logger.warning(
-                            f'#{acc.id} | {acc.address} | will not be used because of leaderboard limit. '
-                            f'current: {leaderboard_top}% with limit {limits.leaderboard_top_limit}%.')
+        if costs < acc.config.common.total_costs_limit:
+            if txs < acc.config.common.daily_txs_limit:
+                if leaderboard_top > acc.config.common.leaderboard_top_limit:
+                    logger.info(f'#{acc.id} | {acc.address} | '
+                                f'will be used for main_taiko with {balance.float} $ETH on taiko.')
+                    accs.append((acc, balance.float))
                 else:
                     logger.warning(
-                        f'#{acc.id} | {acc.address} | will not be used because of daily txs limit. '
-                        f'current: {txs} txs with limit {limits.daily_txs_limit} txs.')
+                        f'#{acc.id} | {acc.address} | will not be used because of leaderboard limit. '
+                        f'current: {leaderboard_top}% with limit {acc.config.common.leaderboard_top_limit}%.')
             else:
                 logger.warning(
-                    f'#{acc.id} | {acc.address} | will not be used because of costs limit. '
-                    f'current: {round(costs, 6)} $ETH with limit {limits.total_costs_limit} $ETH.')
+                    f'#{acc.id} | {acc.address} | will not be used because of daily txs limit. '
+                    f'current: {txs} txs with limit {acc.config.common.daily_txs_limit} txs.')
+        else:
+            logger.warning(
+                f'#{acc.id} | {acc.address} | will not be used because of costs limit. '
+                f'current: {round(costs, 6)} $ETH with limit {acc.config.common.total_costs_limit} $ETH.')
 
     if shuffle:
         random.shuffle(accs)
@@ -147,16 +139,15 @@ def sql_get_accs_to_work(sql: SQL,
 
 def sql_get_accs_to_deposit(
         sql: SQL,
-        day: str,
         shuffle: bool = False,
         filter_low_balance: bool = True
 ) -> List[AccountItem]:
-    total_accs = sql_get_accs(sql=sql)
+    total_accs = insert_tier_configs_into_account_items(accounts=sql_get_accs(sql=sql))
     total_trailblazers = get_total_trailblazer_count(address=total_accs[0].address)
 
     accs = []
     for acc in total_accs:
-        if acc.tier:
+        if acc.config.common.deposit_from_source_chains_to_taiko:
             max_balance = 0
             max_balance_chain = None
 
@@ -170,13 +161,15 @@ def sql_get_accs_to_deposit(
                     max_balance = balance.float
                     max_balance_chain = chain.name
 
-            leave_on_source = get_leave_on_source(tier=acc.tier, chain=max_balance_chain)
-            if filter_low_balance and max_balance <= minimum_transfer + leave_on_source:
+            leave_on_source = acc.config.common.leave_balance_on_source_chains
+            minimum_transfer_value = acc.config.common.minimum_transfer_value
+
+            if filter_low_balance and max_balance <= minimum_transfer_value + leave_on_source:
                 logger.warning(
                     f'#{acc.id} | {acc.address} | '
                     f'the richest chain is {max_balance_chain} with {max_balance} $ETH. '
-                    f'minimum required: {round(minimum_transfer + leave_on_source, 6)} $ETH '
-                    f'(transfer={minimum_transfer} + leave_on_{max_balance_chain}={leave_on_source}).'
+                    f'minimum required: {round(minimum_transfer_value + leave_on_source, 6)} $ETH '
+                    f'(transfer={minimum_transfer_value} + leave_on_{max_balance_chain}={leave_on_source}).'
                 )
                 continue
 
@@ -187,26 +180,22 @@ def sql_get_accs_to_deposit(
             else:
                 leaderboard_top = 100
 
-            if acc.tier == 'A':
-                limits = tier_collection.A
-            elif acc.tier == 'B':
-                limits = tier_collection.B
-            else:
-                limits = tier_collection.C
-
-            if costs < limits.total_costs_limit:
-                if leaderboard_top > limits.leaderboard_top_limit:
+            if costs < acc.config.common.total_costs_limit:
+                if leaderboard_top > acc.config.common.leaderboard_top_limit:
                     logger.info(f'#{acc.id} | {acc.address} | '
                                 f'will be used for deposit with {max_balance} $ETH on {max_balance_chain}.')
                     accs.append((acc, max_balance, max_balance_chain))
                 else:
                     logger.warning(
                         f'#{acc.id} | {acc.address} | will not be used because of leaderboard limit. '
-                        f'current: {leaderboard_top}% with limit {limits.leaderboard_top_limit}%.')
+                        f'current: {leaderboard_top}% with limit {acc.config.common.leaderboard_top_limit}%.')
             else:
                 logger.warning(
                     f'#{acc.id} | {acc.address} | will not be used because of costs limit. '
-                    f'current: {round(costs, 6)} $ETH with limit {limits.total_costs_limit} $ETH.')
+                    f'current: {round(costs, 6)} $ETH with limit {acc.config.common.total_costs_limit} $ETH.')
+        else:
+            logger.warning(
+                f'#{acc.id} | {acc.address} | deposit from source_chains to taiko is disabled.')
 
     if shuffle:
         random.shuffle(accs)

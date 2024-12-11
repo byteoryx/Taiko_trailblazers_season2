@@ -1,7 +1,6 @@
 import concurrent.futures
 import random
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
 
 from loguru import logger
 
@@ -22,7 +21,7 @@ def burner_collector_single_executor(acc: AccountItem, sql: SQL, today_bridge: s
     )
 
 
-def burner_collector_executor(sql: SQL, accs: [AccountItem], today_bridge: str, today: str):
+def burner_collector_executor(sql: SQL, accs: [AccountItem], today_bridge: str):
     if accs:
         logger.success(f'{len(accs)} to be used for burner_collector.')
 
@@ -42,7 +41,6 @@ def burner_collector_executor(sql: SQL, accs: [AccountItem], today_bridge: str, 
 
 
 def main_burner_collector(sql: SQL):
-    today = datetime.now(timezone.utc).strftime("%B%d")
     today_bridge = get_today_table_name()
 
     sql.create_report_day_table(today_bridge)
@@ -52,7 +50,7 @@ def main_burner_collector(sql: SQL):
         if shuffle_accounts:
             random.shuffle(total_accs)
 
-        burner_collector_executor(sql=sql, accs=total_accs, today_bridge=today_bridge, today=today)
+        burner_collector_executor(sql=sql, accs=total_accs, today_bridge=today_bridge)
 
     else:
         logger.success(f'every acc is processed with burner_collector.\n')

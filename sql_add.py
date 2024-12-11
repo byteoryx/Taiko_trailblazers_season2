@@ -13,7 +13,21 @@ def add_accs_to_db(sql: SQL, accs_path: str, tier: str, owner: str):
     lines = read_file(accs_path)
 
     for index, line in enumerate(lines, start=1):
-        private_key, cex_address, proxy = line.split('##')
+        parts = line.strip().split('##')
+
+        private_key = parts[0]
+        cex_address = None
+        proxy = None
+
+        if len(parts) == 3:
+            _, cex_address, proxy = parts
+        elif len(parts) == 2:
+            if parts[1].startswith('0x'):
+                cex_address = parts[1]
+            else:
+                proxy = parts[1]
+        elif len(parts) == 1:
+            pass
 
         acc = AccountItem(
             private_key=private_key,
@@ -28,7 +42,7 @@ def add_accs_to_db(sql: SQL, accs_path: str, tier: str, owner: str):
         if result:
             logger.info(
                 f'#{index} | [{private_key}] with cex_address [{cex_address}], '
-                f'proxy [{acc.proxy}] and owner [{acc.owner}] has been added to the db.'
+                f'proxy [{proxy}] and owner [{owner}] has been added to the db.'
             )
         else:
             logger.info(f'#{index} | [{private_key}] is already in the db.')

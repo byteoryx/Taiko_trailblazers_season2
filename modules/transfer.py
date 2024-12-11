@@ -6,7 +6,7 @@ from web3 import Web3
 
 from datatypes.account import DayBridgeItem
 from sdk.sql import SQL
-from tools.crypto import get_balance, transfer_tx, wait_for_new_balance
+from tools.crypto import get_balance, transfer_tx, wait_for_new_balance, transfer_full_balance
 from tools.other_utils import sleep_in_range
 from user_data.chains import taiko_chain, ChainItem
 from user_data.config import sleep_between_txs_in_sec
@@ -118,7 +118,7 @@ def burner_transfer_main(
                 logger.info(f'#{index} | {main_account.address}: '
                             f'transfer {amount_to_send} $ETH to burner {burner_account.address} | '
                             f'{taiko_chain.explorer}/{tx_hash} | {status}.')
-                sleep_in_range(sec_from=30 + sleep_between_txs_in_sec[0], sec_to=30 + sleep_between_txs_in_sec[1])
+                sleep_in_range(sec_from=120 + sleep_between_txs_in_sec[0], sec_to=120 + sleep_between_txs_in_sec[1])
             else:
                 logger.error(f'#{index} | {main_account.address}: '
                              f'transfer to burner {burner_account.address} burner tx has failed.')
@@ -134,14 +134,14 @@ def burner_transfer_main(
     if old_burner_balance.float > 0.00001:
         new_main_balance = get_balance(address=main_account.address, rpc=taiko_chain.rpc)
 
-        amount_to_send = old_burner_balance.float - random.uniform(0.00003, 0.00006)
-        if amount_to_send > 0:
-            burner_tx_hash = transfer_tx(
-                private_key=burner_private_key,
-                amount_to_send=amount_to_send,
-                address=w3.to_checksum_address(main_account.address)
-            )
-            if burner_tx_hash:
+        burner_tx_hash = transfer_full_balance(private_key=burner_private_key, recipient_addr=main_account.address)
+
+        if burner_tx_hash:
+            if "not enough balance" in burner_tx_hash:
+                logger.info(
+                    f'#{index} | {main_account.address}: nothing to transfer from burner {burner_account.address}.'
+                )
+            else:
                 new_main_balance = wait_for_new_balance(
                     old_balance=new_main_balance,
                     account=main_account,
@@ -164,25 +164,20 @@ def burner_transfer_main(
                     acc_id=index
                 )
                 logger.info(f'#{index} | {main_account.address}: '
-                            f'transfer {round(amount_to_send, 6)} $ETH from burner {burner_account.address} | '
+                            f'transfer {old_burner_balance.float} $ETH from burner {burner_account.address} | '
                             f'{taiko_chain.explorer}/{burner_tx_hash} | {status}.')
                 sleep_in_range(sec_from=30 + sleep_between_txs_in_sec[0], sec_to=30 + sleep_between_txs_in_sec[1])
-            else:
-                logger.error(
-                    f'#{index} | {burner_account.address}: '
-                    f'transfer {round(amount_to_send, 6)} $ETH from burner {burner_account.address} tx has failed.')
         else:
-            logger.info(f'#{index} | {main_account.address}: nothing to transfer from burner {burner_account.address}.')
-    else:
-        logger.info(f'#{index} | {main_account.address}: nothing to transfer from burner {burner_account.address}.')
+            logger.error(
+                f'#{index} | {burner_account.address}: '
+                f'transfer {old_burner_balance.float} $ETH from burner {burner_account.address} tx has failed.'
+            )
 
 
 def transfer_main(
         index: int,
         private_key: str,
         address: str,
-        sql: SQL,
-        day: str,
         multiplier_range: (float, float) = (1, 1),
         transfer_amount: float = 0,
         chain: ChainItem = taiko_chain

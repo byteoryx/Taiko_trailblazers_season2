@@ -6,8 +6,15 @@ from web3 import Web3
 
 from datatypes.account import DayBridgeItem
 from sdk.sql import SQL
-from tools.crypto import get_balance, brigade_harvest_tx, brigade_spin_tx, brigade_capsule_tx, brigade_starship_tx, \
-    brigade_checkin_tx, brigade_claim_item_tx
+from tools.crypto import (
+    get_balance,
+    brigade_harvest_tx,
+    brigade_spin_tx,
+    brigade_capsule_tx,
+    brigade_starship_tx,
+    brigade_checkin_tx,
+    brigade_claim_item_tx
+)
 from user_data.chains import taiko_chain
 
 
@@ -27,7 +34,7 @@ def brigade_harvest(
         tx_hash = brigade_harvest_tx(
             private_key=private_key,
         )
-        if "you can't harvest yet" in tx_hash:
+        if tx_hash and "you can't harvest yet" in tx_hash:
             logger.info(f"#{index} | {account.address}: brigade_harvest | you can't harvest yet.")
         elif tx_hash:
             new_balance = get_balance(address=account.address, rpc=taiko_chain.rpc)
@@ -71,7 +78,7 @@ def brigade_spin(
         tx_hash = brigade_spin_tx(
             private_key=private_key,
         )
-        if "you can't spin yet" in tx_hash:
+        if tx_hash and "you can't spin yet" in tx_hash:
             logger.info(f"#{index} | {account.address}: brigade_spin | you can't spin yet.")
         elif tx_hash:
             new_balance = get_balance(address=account.address, rpc=taiko_chain.rpc)
@@ -113,7 +120,7 @@ def brigade_capsule(
         tx_hash = brigade_capsule_tx(
             private_key=private_key,
         )
-        if "you can't pick a capsule yet" in tx_hash:
+        if tx_hash and "you can't pick a capsule yet" in tx_hash:
             logger.info(f"#{index} | {account.address}: brigade_spin | you can't pick a capsule yet.")
         elif tx_hash:
             new_balance = get_balance(address=account.address, rpc=taiko_chain.rpc)
@@ -156,7 +163,7 @@ def brigade_starship(
         tx_hash = brigade_starship_tx(
             private_key=private_key,
         )
-        if "you can't start yet" in tx_hash:
+        if tx_hash and "you can't start yet" in tx_hash:
             logger.info(f"#{index} | {account.address}: brigade_starship | you can't start yet.")
         elif tx_hash:
             new_balance = get_balance(address=account.address, rpc=taiko_chain.rpc)
@@ -200,7 +207,7 @@ def brigade_checkin(
         tx_hash = brigade_checkin_tx(
             private_key=private_key,
         )
-        if "you can't claim yet" in tx_hash:
+        if tx_hash and "you can't claim yet" in tx_hash:
             logger.info(f"#{index} | {account.address}: brigade_checkin | you can't claim start yet.")
         elif tx_hash:
             new_balance = get_balance(address=account.address, rpc=taiko_chain.rpc)
@@ -245,7 +252,7 @@ def brigade_claim_item(
             private_key=private_key,
             item_index=item_index
         )
-        if "max claims reached for this product" in tx_hash:
+        if tx_hash and "max claims reached for this product" in tx_hash:
             logger.info(f"#{index} | {account.address}: brigade_claim_item{item_index} | already claimed.")
         elif tx_hash:
             new_balance = get_balance(address=account.address, rpc=taiko_chain.rpc)
@@ -285,7 +292,7 @@ def brigade_main(
         lambda: brigade_capsule(index=index, private_key=private_key, sql=sql, day=day),
         lambda: brigade_starship(index=index, private_key=private_key, sql=sql, day=day),
         lambda: brigade_checkin(index=index, private_key=private_key, sql=sql, day=day),
-        lambda: brigade_claim_item(index=index, private_key=private_key, sql=sql, day=day)
+        # lambda: brigade_claim_item(index=index, private_key=private_key, sql=sql, day=day)
     ]
 
     random.shuffle(tasks)

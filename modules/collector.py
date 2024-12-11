@@ -10,40 +10,42 @@ from datatypes.account import AccountItem
 from modules.transfer import transfer_main
 from sdk.sql import SQL
 from tools.crypto import get_balance
-from tools.other_utils import get_leave_on_source
 from user_data.chains import destination_chains
-from user_data.config import shuffle_accounts, workers_range, minimum_transfer
+from user_data.config import shuffle_accounts, workers_range
 
 
 def single_cex_collector_executor(acc: AccountItem, sql, today):
-    address = Web3().eth.account.from_key(acc.private_key).address
+    if acc.config.common.transfer_from_recipient_chains_to_cex:
+        address = Web3().eth.account.from_key(acc.private_key).address
 
-    at_least_one_transfer = False
-    random.shuffle(destination_chains)
+        at_least_one_transfer = False
+        random.shuffle(destination_chains)
 
-    for chain in destination_chains:
-        balance = get_balance(address=address, rpc=chain.rpc)
+        for chain in destination_chains:
+            balance = get_balance(address=address, rpc=chain.rpc)
+            if chain.name.lower() == 'taiko':
+                leave_on_source = acc.config.common.leave_balance_on_taiko_chain
+            else:
+                leave_on_source = acc.config.common.leave_balance_on_source_chains
 
-        leave_on_source = get_leave_on_source(tier=acc.tier, chain=chain.name)
+            if balance.float > leave_on_source + acc.config.common.minimum_transfer_value:
+                at_least_one_transfer = True
+                transfer_amount = balance.float - round(leave_on_source * random.uniform(1, 1.1), random.randint(5, 8))
+                transfer_main(
+                    index=acc.id,
+                    private_key=acc.private_key,
+                    address=acc.cex_address,
+                    transfer_amount=transfer_amount,
+                    chain=chain
+                )
 
-        if balance.float > leave_on_source + minimum_transfer:
-            at_least_one_transfer = True
-            transfer_amount = balance.float - round(leave_on_source * random.uniform(1, 1.1), random.randint(5, 8))
-            transfer_main(
-                index=acc.id,
-                private_key=acc.private_key,
-                address=acc.cex_address,
-                sql=sql,
-                day=today,
-                transfer_amount=transfer_amount,
-                chain=chain
-            )
-
-    if not at_least_one_transfer:
-        logger.warning(f'#{acc.id} | {address}: nothing to deposit on cex.')
+        if not at_least_one_transfer:
+            logger.warning(f'#{acc.id} | {acc.address}: nothing to deposit on cex.')
+    else:
+        logger.info(f'#{acc.id} | {acc.address}: withdraw on cex is disabled for [tier-{acc.tier}].')
 
 
-def main_cex_collector_executor(total_accs: [AccountItem], sql: SQL):
+def transfer_from_recipient_chains_to_cex_executor(total_accs: [AccountItem], sql: SQL):
     today = datetime.now(timezone.utc).strftime("%B%d")
     if total_accs:
         if shuffle_accounts:

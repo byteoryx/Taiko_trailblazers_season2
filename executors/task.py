@@ -16,7 +16,6 @@ def execute_task(
         task_func,
         task_range: (int, int),
         today: str,
-        log_suffix: str,
         start_sleep: bool = True,
         ignore_sleep_after: bool = False
 ):

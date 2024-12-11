@@ -7,7 +7,6 @@ from web3 import Web3
 from datatypes.account import DayBridgeItem, AccountItem
 from sdk.sql import SQL
 from tools.crypto import get_balance, orbiter_bridge_tx, wait_for_new_balance
-from tools.other_utils import get_leave_on_source
 from user_data.chains import ChainItem, taiko_chain
 
 
@@ -27,7 +26,10 @@ def orbiter_bridge(
     old_recipient_balance = get_balance(address=account.address, rpc=recipient_chain.rpc)
     old_total_balance = old_source_balance.float + old_recipient_balance.float
 
-    leave_on_source = get_leave_on_source(tier=account_item.tier, chain=source_chain.name)
+    if source_chain.name.lower() == 'taiko':
+        leave_on_source = account_item.config.common.leave_balance_on_taiko_chain
+    else:
+        leave_on_source = account_item.config.common.leave_balance_on_source_chains
 
     if old_source_balance.float > leave_on_source + minimum_transfer:
         amount_to_bridge = round(
@@ -35,8 +37,6 @@ def orbiter_bridge(
             random.uniform(multiplier_range[0], multiplier_range[1]),
             random.randint(5, 7)
         )
-        logger.info(f'#{account_item.id} | {account.address}: {old_source_balance.float} $ETH on {source_chain.name}, '
-                    f'{amount_to_bridge} $ETH to bridge to {recipient_chain.name}.')
 
         bridge_tx = orbiter_bridge_tx(
             private_key=account_item.private_key,

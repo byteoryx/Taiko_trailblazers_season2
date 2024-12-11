@@ -6,11 +6,11 @@ from web3 import Web3
 
 from datatypes.account import DayBridgeItem, AccountItem
 from sdk.sql import SQL
-from tools.crypto import get_balance, wait_for_new_balance, xy_bridge_tx
+from tools.crypto import get_balance, wait_for_new_balance, hyperlane_bridge_tx
 from user_data.chains import ChainItem, taiko_chain
 
 
-def xy_bridge(
+def hyperlane_bridge(
         account_item: AccountItem,
         source_chain: ChainItem,
         recipient_chain: ChainItem,
@@ -38,7 +38,7 @@ def xy_bridge(
             random.randint(5, 7)
         )
 
-        bridge_tx = xy_bridge_tx(
+        bridge_tx = hyperlane_bridge_tx(
             private_key=account_item.private_key,
             source_chain=source_chain,
             recipient_chain=recipient_chain,
@@ -71,7 +71,7 @@ def xy_bridge(
                     acc_id=account_item.id
                 )
                 logger.info(
-                    f'#{account_item.id} | {account.address}: xy | {source_chain.explorer}/{bridge_tx} | {status}.')
+                    f'#{account_item.id} | {account.address}: hyperlane | {source_chain.explorer}/{bridge_tx} | {status}.')
             else:
                 volume, txs, costs = sql.get_volume_and_txs_by_id(day=day, acc_id=account_item.id)
                 status = sql.add_day_report(
@@ -86,10 +86,10 @@ def xy_bridge(
                     acc_id=account_item.id
                 )
                 logger.info(
-                    f'#{account_item.id} | {account.address}: xy | {source_chain.explorer}/{bridge_tx} | {status}.')
+                    f'#{account_item.id} | {account.address}: hyperlane | {source_chain.explorer}/{bridge_tx} | {status}.')
         else:
-            logger.error(f'#{account_item.id} | {account.address}: xy tx has failed.')
+            logger.error(f'#{account_item.id} | {account.address}: hyperlane tx has failed.')
     else:
         logger.warning(
-            f'#{account_item.id} | xy | {account.address}: {old_source_balance.float} on {source_chain.name}, '
+            f'#{account_item.id} | hyperlane | {account.address}: {old_source_balance.float} on {source_chain.name}, '
             f'minimum required: {round(leave_on_source + minimum_transfer, 6)} $ETH.')

@@ -9,17 +9,17 @@ from executors.task import execute_task
 from sdk.sql import SQL
 from tools.sql import sql_get_accs_to_deposit
 from tools.task import bridge_deposit
-from user_data.config import shuffle_accounts, workers_range, deposit_from_source_chains_to_taiko
+from user_data.config import shuffle_accounts, workers_range
 
 
 def main_single_deposit_executor(acc: AccountItem, sql: SQL, today_bridge: str):
-    if deposit_from_source_chains_to_taiko:
-        execute_task(sql, acc, bridge_deposit, (1, 1), today_bridge, 'bridge deposits')
+    if acc.config.common.deposit_from_source_chains_to_taiko:
+        execute_task(sql, acc, bridge_deposit, (1, 1), today_bridge)
 
 
-def deposit_executor(sql: SQL, today_bridge: str):
+def deposit_from_source_chains_to_taiko_executor(sql: SQL, today_bridge: str):
     logger.success(f'parsing accounts that will be used for deposit_taiko.')
-    deposit_accs = sql_get_accs_to_deposit(sql=sql, day=today_bridge, shuffle=shuffle_accounts)
+    deposit_accs = sql_get_accs_to_deposit(sql=sql, shuffle=shuffle_accounts)
     if deposit_accs:
         logger.success(f'{len(deposit_accs)} accs to be used for deposit_taiko.')
 

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from loguru import logger
 
+from datatypes.account import AccountItem
 from user_data.tiers import tier_collection
 
 
@@ -39,17 +40,43 @@ def get_today_table_name() -> str:
     return today + 'Report'
 
 
-def get_leave_on_source(tier: str, chain: str):
-    chain_field = "leave_balance_on_taiko_chain" if chain == "taiko" else "leave_balance_on_source_chains"
-
-    tier_obj = getattr(tier_collection, tier)
-    leave_on_source = getattr(tier_obj, chain_field)
-
-    return leave_on_source
-
-
-def get_stake_limits(tier: str):
+def get_stake_limits(tier: str) -> [float, float]:
     tier_obj = getattr(tier_collection, tier)
     stake_limit = getattr(tier_obj, 'taikodrips_stake_amount_range')
 
     return stake_limit
+
+
+def append_to_file_if_not_exists(file_path: str, string: str):
+    try:
+        with open(file_path, 'r') as file:
+            contents = file.read()
+            if string in contents:
+                return
+    except FileNotFoundError:
+        pass
+
+    try:
+        with open(file_path, 'r+') as file:
+            file.seek(0, 2)
+            if file.tell() > 0:
+                file.seek(file.tell() - 1)
+                last_char = file.read(1)
+                if last_char != '\n':
+                    file.write('\n')
+    except FileNotFoundError:
+        pass
+
+    with open(file_path, 'a') as file:
+        file.write(f"{string}\n")
+
+
+def insert_tier_configs_into_account_items(accounts: [AccountItem]):
+    for acc in accounts:
+        if acc.tier == 'A':
+            acc.config = tier_collection.A
+        elif acc.tier == 'B':
+            acc.config = tier_collection.B
+        else:
+            acc.config = tier_collection.C
+    return accounts
